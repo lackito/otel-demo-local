@@ -49,3 +49,22 @@ Expected results include:
 - the `flagd` pod reports `1/1 Running`;
 - every deployment completes its rollout;
 - Milestone 5 application validation passes.
+
+## Jaeger memory growth under sustained traffic
+
+### Observation
+
+The Jaeger all-in-one pod is currently limited to 400 MiB. After sustained
+load-generator traffic, Kubernetes reported a previous termination reason of
+`OOMKilled` with exit code 137. The pod restarted and returned to Ready.
+
+This was observed during the Milestone 7 regression sweep. It is independent
+of the custom Recommendation image rollout, but it means a successful rollout
+check alone does not prove long-term observability-backend stability.
+
+### Next step
+
+The observability milestone should measure Jaeger's memory growth, choose an
+appropriate local trace-retention and memory configuration, and add validation
+for backend restarts and queryability. No Jaeger setting was changed during
+the application-image milestone.

@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+apps_repository="${APPS_REPOSITORY:-${repository_root}/../otel-demo-apps}"
+kubeconfig_path="${repository_root}/.state/kubeconfig"
+cluster_name="otel-demo-local"
+image_repository="${RECOMMENDATION_IMAGE_REPOSITORY:-otel-demo/recommendation}"
+
+if [[ ! -f "${apps_repository}/apps/recommendation/Dockerfile" ]]; then
+  echo "Recommendation Dockerfile was not found under ${apps_repository}." >&2
+  exit 1
+fi
+
+if [[ ! -f "${kubeconfig_path}" ]]; then
+  echo "Expected kubeconfig does not exist: ${kubeconfig_path}" >&2
+  exit 1
+fi
+
+apps_revision="$(git -C "${apps_repository}" rev-parse HEAD)"
+image_tag="${RECOMMENDATION_IMAGE_TAG:-local-${apps_revision:0:12}}"
+image_reference="${image_repository}:${image_tag}"
+
+node_architecture="$(
+  kubectl \
+    --kubeconfig "${kubeconfig_path}" \
+    get nodes \
+    --output jsonpath='{.items[0].status.nodeInfo.architecture}'
+)"
+
+case "${node_architecture}" in
+  arm64)
+    image_platform="linux/arm64"
+    ;;
+  amd64)
+    image_platform="linux/amd64"
+    ;;
+  *)
+    echo "Unsupported kind node architecture: ${node_architecture}" >&2
+    exit 1
+    ;;
+esac
+
+echo "Building ${image_reference} for ${image_platform}."
+docker build \
+  --platform "${image_platform}" \
+  --tag "${image_reference}" \
+  "${apps_repository}/apps/recommendation"
+
+echo "Loading ${image_reference} into kind cluster ${cluster_name}."
+kind load docker-image \
+  --name "${cluster_name}" \
+  "${image_reference}"
+
+loaded_image="$(
+  docker exec \
+    "${cluster_name}-control-plane" \
+    crictl images \
+    --output json |
+    grep -F "${image_reference}" || true
+)"
+
+if [[ -z "${loaded_image}" ]]; then
+  echo "The image was not found in the kind node's container runtime." >&2
+  exit 1
+fi
+
+echo "Recommendation image is ready for GitOps."
+echo "Repository: ${image_repository}"
+echo "Tag: ${image_tag}"

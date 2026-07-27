@@ -34,18 +34,38 @@ container builds.
 NGINX Gateway Fabric has separate control and data planes.
 
 - Terraform installs the control plane.
-- A future Gateway resource causes NGINX Gateway Fabric to create the data
+- The GitOps-owned Gateway causes NGINX Gateway Fabric to create the data
   plane.
 - HTTPRoute resources attach application routes to that Gateway.
 - Fixed NodePorts connect the generated data plane to kind's host port
   mappings.
 
-This milestone installs only the control plane. Gateway and HTTPRoute resources
-belong with application desired state in the GitOps repository.
+Gateway and HTTPRoute resources belong with application desired state in the
+GitOps repository.
+
+## Local application image flow
+
+```text
+otel-demo-apps
+        |
+        v
+Native Docker build tagged with the apps Git revision
+        |
+        v
+kind image load
+        |
+        v
+Local GitOps image override
+        |
+        v
+Argo CD Recommendation rollout
+```
+
+Direct image loading is the first local-development stage. GHCR will replace
+the machine-local image handoff when the workflow is automated for CI.
 
 ## Context isolation
 
 All platform commands use `.state/kubeconfig` and the
 `kind-otel-demo-local` context. The default kubeconfig is never used by
 Terraform or the repository lifecycle scripts.
-

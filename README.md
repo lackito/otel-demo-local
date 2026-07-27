@@ -13,13 +13,14 @@ the ownership model used by the AWS implementation:
 
 ## Current milestone
 
-Milestone 6 exposes the GitOps-managed demo through NGINX Gateway Fabric:
+Milestone 7 deploys a locally built Recommendation service:
 
-- the Gateway listens for `*.localhost` traffic on HTTP port 80;
-- an `HTTPRoute` matches `otel-demo.localhost`;
-- NGINX sends matching traffic to `frontend-proxy:8080`;
-- unmatched hostnames receive HTTP 404;
-- no port-forward or hosts-file entry is required.
+- `otel-demo-apps` remains the application-source owner;
+- the image is tagged with the application repository's Git revision;
+- the build targets the kind node's native architecture;
+- kind receives the image directly without a registry;
+- the local GitOps overlay selects the immutable image tag;
+- Argo CD performs the Recommendation rollout.
 
 The optional `flagd-ui` editor sidecar is disabled only in the local overlay
 because the chart's 2.1.3 image grows until it is OOM-killed on this arm64
@@ -136,6 +137,20 @@ response, and hostname isolation:
 make routing-validate
 ```
 
+Build Recommendation from the sibling `otel-demo-apps` repository and load it
+into kind:
+
+```bash
+make recommendation-build-load
+```
+
+After the matching immutable tag is committed to the local GitOps values,
+validate the loaded image, Argo CD state, rollout, and Recommendation API:
+
+```bash
+make recommendation-validate
+```
+
 Open the demo:
 
 ```text
@@ -153,6 +168,9 @@ kubectl --kubeconfig .state/kubeconfig \
 
 See `docs/TROUBLESHOOTING.md` for the `flagd-ui` investigation and the local
 fallback decision.
+
+See `docs/IMAGE_WORKFLOW.md` for the direct-load, local-registry, and GHCR
+tradeoffs and progression.
 
 ## Why Gateway API instead of ingress-nginx
 

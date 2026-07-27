@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+apps_repository="${APPS_REPOSITORY:-${repository_root}/../otel-demo-apps}"
+kubeconfig_path="${repository_root}/.state/kubeconfig"
+cluster_name="otel-demo-local"
+workload_namespace="opentelemetry-demo"
+image_repository="${RECOMMENDATION_IMAGE_REPOSITORY:-otel-demo/recommendation}"
+demo_url="http://otel-demo.localhost"
+
+if [[ ! -f "${kubeconfig_path}" ]]; then
+  echo "Expected kubeconfig does not exist: ${kubeconfig_path}" >&2
+  exit 1
+fi
+
+apps_revision="$(git -C "${apps_repository}" rev-parse HEAD)"
+image_tag="${RECOMMENDATION_IMAGE_TAG:-local-${apps_revision:0:12}}"
+expected_image="${image_repository}:${image_tag}"
+
+application_state="$(
+  kubectl \
+    --kubeconfig "${kubeconfig_path}" \
+    get application otel-demo-local \
+    --namespace argocd \
+    --output jsonpath='{.status.sync.status} {.status.health.status}'
+)"
+
+if [[ "${application_state}" != "Synced Healthy" ]]; then
+  echo "Argo CD application state is ${application_state}; expected Synced Healthy." >&2
+  exit 1
+fi
+
+loaded_image="$(
+  docker exec \
+    "${cluster_name}-control-plane" \
+    crictl images \
+    --output json |
+    grep -F "${expected_image}" || true
+)"
+
+if [[ -z "${loaded_image}" ]]; then
+  echo "${expected_image} is not loaded in the kind node." >&2
+  exit 1
+fi
+
+deployed_image="$(
+  kubectl \
+    --kubeconfig "${kubeconfig_path}" \
+    get deployment recommendation \
+    --namespace "${workload_namespace}" \
+    --output jsonpath='{.spec.template.spec.containers[0].image}'
+)"
+
+if [[ "${deployed_image}" != "${expected_image}" ]]; then
+  echo "Recommendation uses ${deployed_image}; expected ${expected_image}." >&2
+  exit 1
+fi
+
+kubectl \
+  --kubeconfig "${kubeconfig_path}" \
+  rollout status deployment/recommendation \
+  --namespace "${workload_namespace}" \
+  --timeout=180s
+
+api_response="$(
+  curl \
+    --fail \
+    --silent \
+    --show-error \
+    "${demo_url}/api/recommendations?productIds=OLJCESPC7Z"
+)"
+
+if [[ -z "${api_response}" || "${api_response}" != *'"id"'* ]]; then
+  echo "Recommendation API did not return a product list." >&2
+  exit 1
+fi
+
+echo "Milestone 7 Recommendation validation passed."
+echo "Application: ${application_state}"
+echo "Image: ${deployed_image}"
+echo "Recommendation API: HTTP 200 with product data"
