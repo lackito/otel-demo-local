@@ -3,7 +3,7 @@ SHELL := /bin/bash
 .PHONY: prerequisites cluster-create cluster-destroy validate \
 	platform-init platform-plan platform-apply platform-validate platform-destroy \
 	application-validate routing-validate recommendation-build-load \
-	recommendation-validate
+	recommendation-validate observability-validate observability-soak
 
 prerequisites:
 	./scripts/prerequisites
@@ -43,3 +43,9 @@ recommendation-build-load:
 
 recommendation-validate:
 	./scripts/recommendation-validate
+
+observability-validate:
+	./scripts/observability-validate
+
+observability-soak:
+	OBSERVABILITY_SOAK_SECONDS=900 ./scripts/observability-validate

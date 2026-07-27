@@ -9,6 +9,8 @@ required_commands=(
   helm
   terraform
   make
+  curl
+  jq
 )
 
 missing_commands=()
@@ -30,4 +32,3 @@ if ! docker info >/dev/null 2>&1; then
 fi
 
 echo "All Milestone 2 prerequisites are available."
-

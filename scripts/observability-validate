@@ -1,0 +1,217 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+kubeconfig_path="${repository_root}/.state/kubeconfig"
+cluster_name="otel-demo-local"
+workload_namespace="opentelemetry-demo"
+demo_url="http://otel-demo.localhost"
+soak_seconds="${OBSERVABILITY_SOAK_SECONDS:-0}"
+sample_interval_seconds=30
+
+if [[ ! -f "${kubeconfig_path}" ]]; then
+  echo "Expected kubeconfig does not exist: ${kubeconfig_path}" >&2
+  exit 1
+fi
+
+observability_pods() {
+  kubectl \
+    --kubeconfig "${kubeconfig_path}" \
+    get pods \
+    --namespace "${workload_namespace}" \
+    --output json
+}
+
+restart_snapshot() {
+  observability_pods |
+    jq --compact-output --sort-keys '
+      [
+        .items[]
+        | select(.metadata.name | test("^(grafana|jaeger|otel-collector|prometheus)-"))
+        | {
+            uid: .metadata.uid,
+            containers: [
+              .status.containerStatuses[]
+              | {name, restartCount}
+            ]
+          }
+      ]
+      | sort_by(.uid)
+    '
+}
+
+validate_no_oom() {
+  oom_containers="$(
+    observability_pods |
+      jq --raw-output '
+        .items[]
+        | select(.metadata.name | test("^(grafana|jaeger|otel-collector|prometheus)-"))
+        | .metadata.name as $pod
+        | .status.containerStatuses[]
+        | select(.lastState.terminated.reason == "OOMKilled")
+        | "\($pod)/\(.name)"
+      '
+  )"
+
+  if [[ -n "${oom_containers}" ]]; then
+    echo "Observability containers retain an OOMKilled state:" >&2
+    echo "${oom_containers}" >&2
+    exit 1
+  fi
+}
+
+validate_apis() {
+  prometheus_response="$(
+    kubectl \
+      --kubeconfig "${kubeconfig_path}" \
+      get --raw \
+      "/api/v1/namespaces/${workload_namespace}/services/http:prometheus:9090/proxy/api/v1/query?query=count(up)"
+  )"
+
+  prometheus_up="$(
+    jq --raw-output '.data.result[0].value[1] // "0"' <<< "${prometheus_response}"
+  )"
+
+  if [[ "$(jq --raw-output '.status' <<< "${prometheus_response}")" != "success" ]] ||
+    ((prometheus_up < 1)); then
+    echo "Prometheus did not return active up-series data." >&2
+    exit 1
+  fi
+
+  jaeger_services="$(
+    kubectl \
+      --kubeconfig "${kubeconfig_path}" \
+      get --raw \
+      "/api/v1/namespaces/${workload_namespace}/services/http:jaeger-query:16686/proxy/jaeger/ui/api/services"
+  )"
+
+  if ! jq --exit-status '.data | index("recommendation") != null' \
+    <<< "${jaeger_services}" >/dev/null; then
+    echo "Jaeger does not list the Recommendation service." >&2
+    exit 1
+  fi
+
+  jaeger_traces="$(
+    kubectl \
+      --kubeconfig "${kubeconfig_path}" \
+      get --raw \
+      "/api/v1/namespaces/${workload_namespace}/services/http:jaeger-query:16686/proxy/jaeger/ui/api/traces?service=recommendation&limit=1&lookback=1h"
+  )"
+
+  if ! jq --exit-status '.data | length > 0' <<< "${jaeger_traces}" >/dev/null; then
+    echo "Jaeger did not return a recent Recommendation trace." >&2
+    exit 1
+  fi
+
+  grafana_health="$(
+    kubectl \
+      --kubeconfig "${kubeconfig_path}" \
+      get --raw \
+      "/api/v1/namespaces/${workload_namespace}/services/http:grafana:80/proxy/grafana/api/health"
+  )"
+
+  if ! jq --exit-status '.database == "ok"' <<< "${grafana_health}" >/dev/null; then
+    echo "Grafana health did not report a healthy database." >&2
+    exit 1
+  fi
+
+  grafana_datasources="$(
+    kubectl \
+      --kubeconfig "${kubeconfig_path}" \
+      get --raw \
+      "/api/v1/namespaces/${workload_namespace}/services/http:grafana:80/proxy/grafana/api/datasources"
+  )"
+
+  if ! jq --exit-status \
+    'any(.[]; .type == "prometheus") and any(.[]; .type == "jaeger")' \
+    <<< "${grafana_datasources}" >/dev/null; then
+    echo "Grafana is missing its Prometheus or Jaeger datasource." >&2
+    exit 1
+  fi
+
+  curl --fail --silent --show-error --output /dev/null \
+    "${demo_url}/grafana/api/health"
+  curl --fail --silent --show-error --output /dev/null \
+    "${demo_url}/jaeger/ui/api/services"
+
+  echo "APIs: Prometheus up=${prometheus_up}, Jaeger recommendation trace=present, Grafana database=ok"
+}
+
+sample_memory() {
+  docker exec \
+    "${cluster_name}-control-plane" \
+    crictl stats \
+    --output json |
+    jq --raw-output '
+      [
+        .stats[]
+        | select(.attributes.labels["io.kubernetes.pod.namespace"] == "opentelemetry-demo")
+        | select(.attributes.labels["io.kubernetes.pod.name"] | test("^(grafana|jaeger|otel-collector|prometheus)-"))
+        | {
+            name: .attributes.metadata.name,
+            mib: ((.memory.workingSetBytes.value | tonumber) / 1048576 | floor)
+          }
+      ]
+      | sort_by(.name)
+      | map("\(.name)=\(.mib)Mi")
+      | join(" ")
+    '
+}
+
+application_state="$(
+  kubectl \
+    --kubeconfig "${kubeconfig_path}" \
+    get application otel-demo-local \
+    --namespace argocd \
+    --output jsonpath='{.status.sync.status} {.status.health.status}'
+)"
+
+if [[ "${application_state}" != "Synced Healthy" ]]; then
+  echo "Argo CD application state is ${application_state}; expected Synced Healthy." >&2
+  exit 1
+fi
+
+for deployment in jaeger prometheus grafana otel-collector; do
+  kubectl \
+    --kubeconfig "${kubeconfig_path}" \
+    rollout status "deployment/${deployment}" \
+    --namespace "${workload_namespace}" \
+    --timeout=180s
+done
+
+validate_no_oom
+validate_apis
+
+baseline_restarts="$(restart_snapshot)"
+echo "Memory: $(sample_memory)"
+
+elapsed_seconds=0
+while ((elapsed_seconds < soak_seconds)); do
+  remaining_seconds=$((soak_seconds - elapsed_seconds))
+  sleep_seconds="${sample_interval_seconds}"
+  if ((remaining_seconds < sample_interval_seconds)); then
+    sleep_seconds="${remaining_seconds}"
+  fi
+
+  sleep "${sleep_seconds}"
+  elapsed_seconds=$((elapsed_seconds + sleep_seconds))
+
+  validate_no_oom
+
+  current_restarts="$(restart_snapshot)"
+  if [[ "${current_restarts}" != "${baseline_restarts}" ]]; then
+    echo "An observability pod was replaced or restarted during the soak." >&2
+    diff \
+      <(echo "${baseline_restarts}") \
+      <(echo "${current_restarts}") >&2 || true
+    exit 1
+  fi
+
+  validate_apis
+  echo "Soak ${elapsed_seconds}/${soak_seconds}s memory: $(sample_memory)"
+done
+
+echo "Milestone 8 observability validation passed."
+echo "Application: ${application_state}"
+echo "Soak duration: ${soak_seconds}s"

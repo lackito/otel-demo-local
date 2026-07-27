@@ -62,9 +62,12 @@ This was observed during the Milestone 7 regression sweep. It is independent
 of the custom Recommendation image rollout, but it means a successful rollout
 check alone does not prove long-term observability-backend stability.
 
-### Next step
+### Resolution
 
-The observability milestone should measure Jaeger's memory growth, choose an
-appropriate local trace-retention and memory configuration, and add validation
-for backend restarts and queryability. No Jaeger setting was changed during
-the application-image milestone.
+The local overlay reduces Jaeger's in-memory retention from 5,000 to 2,000
+traces and raises its limit to 512 MiB. Related measured headroom was added for
+Prometheus, the OpenTelemetry Collector, Grafana, and Grafana's sidecars.
+
+`make observability-validate` verifies real trace and metric queries.
+`make observability-soak` also ensures the observability pods are neither
+replaced nor restarted during a 15-minute sustained-load window.

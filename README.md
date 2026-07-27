@@ -13,14 +13,14 @@ the ownership model used by the AWS implementation:
 
 ## Current milestone
 
-Milestone 7 deploys a locally built Recommendation service:
+Milestone 8 stabilizes and validates the local observability backends:
 
-- `otel-demo-apps` remains the application-source owner;
-- the image is tagged with the application repository's Git revision;
-- the build targets the kind node's native architecture;
-- kind receives the image directly without a registry;
-- the local GitOps overlay selects the immutable image tag;
-- Argo CD performs the Recommendation rollout.
+- Jaeger retains 2,000 in-memory traces with a 512 MiB limit;
+- Prometheus has a 512 MiB limit;
+- the OpenTelemetry Collector has a 300 MiB limit;
+- Grafana has a 384 MiB limit and 128 MiB sidecar limits;
+- validation queries real metrics, traces, health, and datasources;
+- a 15-minute soak detects backend restarts and OOMs.
 
 The optional `flagd-ui` editor sidecar is disabled only in the local overlay
 because the chart's 2.1.3 image grows until it is OOM-killed on this arm64
@@ -151,10 +151,29 @@ validate the loaded image, Argo CD state, rollout, and Recommendation API:
 make recommendation-validate
 ```
 
+Validate the observability backends and real telemetry data:
+
+```bash
+make observability-validate
+```
+
+Run the 15-minute stability test:
+
+```bash
+make observability-soak
+```
+
 Open the demo:
 
 ```text
 http://otel-demo.localhost
+```
+
+Open the observability UIs:
+
+```text
+http://otel-demo.localhost/grafana/
+http://otel-demo.localhost/jaeger/ui/
 ```
 
 For direct service debugging, a temporary port-forward can still bypass the
