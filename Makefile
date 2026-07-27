@@ -2,7 +2,7 @@ SHELL := /bin/bash
 
 .PHONY: prerequisites cluster-create cluster-destroy validate \
 	platform-init platform-plan platform-apply platform-validate platform-destroy \
-	application-validate
+	application-validate routing-validate
 
 prerequisites:
 	./scripts/prerequisites
@@ -33,3 +33,6 @@ platform-destroy:
 
 application-validate:
 	./scripts/application-validate
+
+routing-validate:
+	./scripts/routing-validate

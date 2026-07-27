@@ -13,13 +13,13 @@ the ownership model used by the AWS implementation:
 
 ## Current milestone
 
-Milestone 5 deploys and validates the OpenTelemetry Demo through Argo CD:
+Milestone 6 exposes the GitOps-managed demo through NGINX Gateway Fabric:
 
-- Terraform registers the local Argo CD Application;
-- Argo CD reconciles the Helm chart and local GitOps values;
-- the Gateway is accepted and programmed;
-- all application deployments are healthy;
-- the frontend responds successfully through `frontend-proxy`.
+- the Gateway listens for `*.localhost` traffic on HTTP port 80;
+- an `HTTPRoute` matches `otel-demo.localhost`;
+- NGINX sends matching traffic to `frontend-proxy:8080`;
+- unmatched hostnames receive HTTP 404;
+- no port-forward or hosts-file entry is required.
 
 The optional `flagd-ui` editor sidecar is disabled only in the local overlay
 because the chart's 2.1.3 image grows until it is OOM-killed on this arm64
@@ -91,7 +91,8 @@ NGINX Gateway Fabric:
 | 443 | 30478 | HTTPS 443 |
 
 The GitOps repository now provides the Gateway resource, which causes NGINX
-Gateway Fabric to create the local data plane.
+Gateway Fabric to create the local data plane. Its `HTTPRoute` exposes the demo
+at `http://otel-demo.localhost`.
 
 ## Platform lifecycle
 
@@ -128,18 +129,27 @@ image source:
 make application-validate
 ```
 
-For a temporary direct frontend test:
+Validate the Gateway, route attachment, backend references, successful demo
+response, and hostname isolation:
 
 ```bash
-kubectl \
-  --kubeconfig .state/kubeconfig \
-  port-forward \
-  --namespace opentelemetry-demo \
-  service/frontend-proxy \
-  18080:8080
+make routing-validate
 ```
 
-Then open `http://localhost:18080`.
+Open the demo:
+
+```text
+http://otel-demo.localhost
+```
+
+For direct service debugging, a temporary port-forward can still bypass the
+Gateway:
+
+```bash
+kubectl --kubeconfig .state/kubeconfig \
+  port-forward --namespace opentelemetry-demo \
+  service/frontend-proxy 18080:8080
+```
 
 See `docs/TROUBLESHOOTING.md` for the `flagd-ui` investigation and the local
 fallback decision.

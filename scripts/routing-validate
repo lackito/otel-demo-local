@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+kubeconfig_path="${repository_root}/.state/kubeconfig"
+workload_namespace="opentelemetry-demo"
+route_name="otel-demo"
+gateway_name="otel-demo"
+demo_url="http://otel-demo.localhost"
+timeout_seconds=300
+poll_interval_seconds=5
+elapsed_seconds=0
+
+if [[ ! -f "${kubeconfig_path}" ]]; then
+  echo "Expected kubeconfig does not exist: ${kubeconfig_path}" >&2
+  exit 1
+fi
+
+while ((elapsed_seconds < timeout_seconds)); do
+  route_conditions="$(
+    kubectl \
+      --kubeconfig "${kubeconfig_path}" \
+      get httproute "${route_name}" \
+      --namespace "${workload_namespace}" \
+      --output jsonpath='{range .status.parents[*].conditions[*]}{.type}={.status}/{.reason}{" "}{end}' \
+      2>/dev/null || true
+  )"
+
+  echo "HTTPRoute conditions: ${route_conditions:-Unknown}"
+
+  if [[ "${route_conditions}" == *"Accepted=True/Accepted"* ]] &&
+    [[ "${route_conditions}" == *"ResolvedRefs=True/ResolvedRefs"* ]]; then
+    break
+  fi
+
+  sleep "${poll_interval_seconds}"
+  elapsed_seconds=$((elapsed_seconds + poll_interval_seconds))
+done
+
+if [[ "${route_conditions:-}" != *"Accepted=True/Accepted"* ]] ||
+  [[ "${route_conditions:-}" != *"ResolvedRefs=True/ResolvedRefs"* ]]; then
+  echo "HTTPRoute did not become accepted with resolved references." >&2
+  exit 1
+fi
+
+attached_routes="$(
+  kubectl \
+    --kubeconfig "${kubeconfig_path}" \
+    get gateway "${gateway_name}" \
+    --namespace "${workload_namespace}" \
+    --output jsonpath='{.status.listeners[?(@.name=="http")].attachedRoutes}'
+)"
+
+if [[ "${attached_routes}" != "1" ]]; then
+  echo "Expected one route on the HTTP listener; found ${attached_routes:-0}." >&2
+  exit 1
+fi
+
+demo_status="$(
+  curl \
+    --silent \
+    --show-error \
+    --output /dev/null \
+    --write-out '%{http_code}' \
+    "${demo_url}/"
+)"
+
+if [[ "${demo_status}" != "200" ]]; then
+  echo "${demo_url} returned HTTP ${demo_status}; expected 200." >&2
+  exit 1
+fi
+
+unmatched_status="$(
+  curl \
+    --silent \
+    --show-error \
+    --output /dev/null \
+    --write-out '%{http_code}' \
+    http://not-the-demo.localhost/
+)"
+
+if [[ "${unmatched_status}" != "404" ]]; then
+  echo "Unmatched hostname returned HTTP ${unmatched_status}; expected 404." >&2
+  exit 1
+fi
+
+echo "Milestone 6 routing validation passed."
+echo "Demo URL: ${demo_url} (HTTP ${demo_status})"
+echo "Unmatched hostname: HTTP ${unmatched_status}"
