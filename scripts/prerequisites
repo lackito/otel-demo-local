@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+required_commands=(
+  docker
+  kind
+  kubectl
+  helm
+  terraform
+  make
+)
+
+missing_commands=()
+
+for command_name in "${required_commands[@]}"; do
+  if ! command -v "${command_name}" >/dev/null 2>&1; then
+    missing_commands+=("${command_name}")
+  fi
+done
+
+if ((${#missing_commands[@]} > 0)); then
+  echo "Missing required commands: ${missing_commands[*]}" >&2
+  exit 1
+fi
+
+if ! docker info >/dev/null 2>&1; then
+  echo "Docker is installed but its runtime is unavailable." >&2
+  exit 1
+fi
+
+echo "All Milestone 2 prerequisites are available."
+

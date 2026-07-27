@@ -1,0 +1,171 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+kubeconfig_path="${repository_root}/.state/kubeconfig"
+application_name="otel-demo-local"
+application_namespace="argocd"
+workload_namespace="opentelemetry-demo"
+timeout_seconds=900
+poll_interval_seconds=10
+elapsed_seconds=0
+
+if [[ ! -f "${kubeconfig_path}" ]]; then
+  echo "Expected kubeconfig does not exist: ${kubeconfig_path}" >&2
+  exit 1
+fi
+
+while ((elapsed_seconds < timeout_seconds)); do
+  sync_status="$(
+    kubectl \
+      --kubeconfig "${kubeconfig_path}" \
+      get application "${application_name}" \
+      --namespace "${application_namespace}" \
+      --output jsonpath='{.status.sync.status}' 2>/dev/null || true
+  )"
+
+  health_status="$(
+    kubectl \
+      --kubeconfig "${kubeconfig_path}" \
+      get application "${application_name}" \
+      --namespace "${application_namespace}" \
+      --output jsonpath='{.status.health.status}' 2>/dev/null || true
+  )"
+
+  echo "Argo CD: sync=${sync_status:-Unknown} health=${health_status:-Unknown}"
+
+  if [[ "${sync_status}" == "Synced" && "${health_status}" == "Healthy" ]]; then
+    break
+  fi
+
+  sleep "${poll_interval_seconds}"
+  elapsed_seconds=$((elapsed_seconds + poll_interval_seconds))
+done
+
+if [[ "${sync_status:-}" != "Synced" || "${health_status:-}" != "Healthy" ]]; then
+  echo "Argo CD Application did not become Synced and Healthy within ${timeout_seconds} seconds." >&2
+  kubectl \
+    --kubeconfig "${kubeconfig_path}" \
+    describe application "${application_name}" \
+    --namespace "${application_namespace}" >&2
+  exit 1
+fi
+
+kubectl \
+  --kubeconfig "${kubeconfig_path}" \
+  wait \
+  gateway/otel-demo \
+  --namespace "${workload_namespace}" \
+  --for=condition=Accepted \
+  --timeout=300s
+
+kubectl \
+  --kubeconfig "${kubeconfig_path}" \
+  wait \
+  gateway/otel-demo \
+  --namespace "${workload_namespace}" \
+  --for=condition=Programmed \
+  --timeout=300s
+
+deployments="$(
+  kubectl \
+    --kubeconfig "${kubeconfig_path}" \
+    get deployments \
+    --namespace "${workload_namespace}" \
+    --output name
+)"
+
+if [[ -z "${deployments}" ]]; then
+  echo "No deployments were found in namespace ${workload_namespace}." >&2
+  exit 1
+fi
+
+while IFS= read -r deployment; do
+  kubectl \
+    --kubeconfig "${kubeconfig_path}" \
+    rollout \
+    status \
+    "${deployment}" \
+    --namespace "${workload_namespace}" \
+    --timeout=600s
+done <<< "${deployments}"
+
+stable_checks=0
+elapsed_seconds=0
+
+while ((elapsed_seconds < 300)); do
+  sync_status="$(
+    kubectl \
+      --kubeconfig "${kubeconfig_path}" \
+      get application "${application_name}" \
+      --namespace "${application_namespace}" \
+      --output jsonpath='{.status.sync.status}'
+  )"
+
+  health_status="$(
+    kubectl \
+      --kubeconfig "${kubeconfig_path}" \
+      get application "${application_name}" \
+      --namespace "${application_namespace}" \
+      --output jsonpath='{.status.health.status}'
+  )"
+
+  if [[ "${sync_status}" == "Synced" && "${health_status}" == "Healthy" ]]; then
+    stable_checks=$((stable_checks + 1))
+  else
+    stable_checks=0
+  fi
+
+  echo "Stable health check ${stable_checks}/3: sync=${sync_status} health=${health_status}"
+
+  if ((stable_checks == 3)); then
+    break
+  fi
+
+  sleep "${poll_interval_seconds}"
+  elapsed_seconds=$((elapsed_seconds + poll_interval_seconds))
+done
+
+if ((stable_checks != 3)); then
+  echo "Argo CD Application did not remain healthy for three consecutive checks." >&2
+  exit 1
+fi
+
+recommendation_images="$(
+  kubectl \
+    --kubeconfig "${kubeconfig_path}" \
+    get pods \
+    --namespace "${workload_namespace}" \
+    --selector app.kubernetes.io/component=recommendation \
+    --output jsonpath='{.items[*].spec.containers[*].image}'
+)"
+
+if [[ -z "${recommendation_images}" ]]; then
+  echo "Recommendation workload image could not be found." >&2
+  exit 1
+fi
+
+if [[ "${recommendation_images}" == *".dkr.ecr."* ]]; then
+  echo "Local Recommendation workload unexpectedly references Amazon ECR." >&2
+  exit 1
+fi
+
+echo "Milestone 5 application validation passed."
+echo
+kubectl \
+  --kubeconfig "${kubeconfig_path}" \
+  get application "${application_name}" \
+  --namespace "${application_namespace}"
+echo
+kubectl \
+  --kubeconfig "${kubeconfig_path}" \
+  get gateway \
+  --namespace "${workload_namespace}"
+echo
+kubectl \
+  --kubeconfig "${kubeconfig_path}" \
+  get pods \
+  --namespace "${workload_namespace}"
+echo
+echo "Recommendation image: ${recommendation_images}"

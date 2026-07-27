@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cluster_name="otel-demo-local"
+cluster_config="${repository_root}/kind/cluster.yaml"
+state_directory="${repository_root}/.state"
+kubeconfig_path="${state_directory}/kubeconfig"
+
+mkdir -p "${state_directory}"
+
+cluster_exists="false"
+
+while IFS= read -r existing_cluster; do
+  if [[ "${existing_cluster}" == "${cluster_name}" ]]; then
+    cluster_exists="true"
+    break
+  fi
+done < <(kind get clusters 2>/dev/null)
+
+if [[ "${cluster_exists}" == "true" ]]; then
+  echo "Cluster ${cluster_name} already exists."
+  echo "Run 'make validate' to check it or 'make cluster-destroy' first."
+  exit 0
+fi
+
+kind create cluster \
+  --name "${cluster_name}" \
+  --config "${cluster_config}" \
+  --kubeconfig "${kubeconfig_path}"
+
+kubectl \
+  --kubeconfig "${kubeconfig_path}" \
+  wait \
+  --for=condition=Ready \
+  node \
+  --all \
+  --timeout=120s
+
+echo "Cluster ${cluster_name} is ready."
+echo "Kubeconfig: ${kubeconfig_path}"

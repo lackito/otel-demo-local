@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cluster_name="otel-demo-local"
+kubeconfig_path="${repository_root}/.state/kubeconfig"
+platform_directory="${repository_root}/terraform/platform"
+
+if [[ -f "${platform_directory}/terraform.tfstate" ]]; then
+  platform_resources="$(
+    terraform \
+      -chdir="${platform_directory}" \
+      state list 2>/dev/null || true
+  )"
+
+  if [[ -n "${platform_resources}" ]]; then
+    echo "Terraform still manages platform resources in this cluster." >&2
+    echo "Run 'make platform-destroy' before deleting the cluster." >&2
+    exit 1
+  fi
+fi
+
+kind delete cluster --name "${cluster_name}"
+rm -f "${kubeconfig_path}"
+
+echo "Cluster ${cluster_name} and its generated kubeconfig were removed."

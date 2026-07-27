@@ -1,0 +1,20 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+    extraPortMappings:
+      # NGINX Gateway Fabric exposes these fixed NodePorts. kind forwards the
+      # workstation's standard web ports to them.
+      - containerPort: 31437
+        hostPort: 80
+        protocol: TCP
+      - containerPort: 30478
+        hostPort: 443
+        protocol: TCP
