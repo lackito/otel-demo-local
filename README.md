@@ -26,6 +26,57 @@ The optional `flagd-ui` editor sidecar is disabled only in the local overlay
 because the chart's 2.1.3 image grows until it is OOM-killed on this arm64
 environment. The `flagd` evaluation service remains enabled.
 
+## How local GitOps works
+
+Local Argo CD watches this repository:
+
+```text
+https://github.com/lackito/otel-demo-local.git
+```
+
+The repository has two separate areas of responsibility:
+
+```text
+otel-demo-local
+├── kind/ and terraform/
+│   └── Create the cluster, install platform components, and register Argo CD
+│
+└── gitops/otel-demo/
+    ├── values.yaml
+    └── manifests/
+        ├── gateway.yaml
+        └── httproute.yaml
+            └── Desired state continuously monitored by local Argo CD
+```
+
+The control flow is:
+
+```text
+Commit and push a change to otel-demo-local/main
+                       |
+                       v
+Local Argo CD reads otel-demo-local from GitHub
+                       |
+                       v
+Argo combines the upstream OpenTelemetry Demo Helm chart
+with gitops/otel-demo/values.yaml and manifests/
+                       |
+                       v
+Argo reconciles the local kind cluster
+```
+
+Terraform installs Argo CD and registers the Application, but it does not
+manage the OpenTelemetry Demo workloads. After registration, Argo CD owns
+those workloads.
+
+Argo CD runs inside Kubernetes and cannot read uncommitted files from the
+workstation. Desired-state changes must be committed and pushed before Argo
+can see them. The GitHub repository must either be public or configured in
+Argo CD with private-repository credentials.
+
+`otel-demo-gitops` is not part of this local flow. It is reserved for the AWS
+EKS environment.
+
 ## Prerequisites
 
 - Docker-compatible runtime
@@ -34,12 +85,34 @@ environment. The `flagd` evaluation service remains enabled.
 - Helm
 - Terraform
 - Make
+- anonymous read access to `lackito/otel-demo-local` from Argo CD, or
+  separately configured private-repository credentials
 
 Check the workstation:
 
 ```bash
 make prerequisites
 ```
+
+## Fresh cluster order
+
+The local Recommendation image is loaded directly into kind rather than
+pulled from a registry. On a brand-new cluster, use this order:
+
+```bash
+make cluster-create
+make recommendation-build-load
+make platform-init
+make platform-plan
+make platform-apply
+make application-validate
+make recommendation-validate
+```
+
+Before applying the platform, confirm that the tag printed by
+`make recommendation-build-load` matches the tag in
+`gitops/otel-demo/values.yaml`. If the tag changes, commit and push the values
+change before running `make platform-apply`.
 
 ## Cluster lifecycle
 
@@ -144,13 +217,29 @@ into kind:
 make recommendation-build-load
 ```
 
-After the matching immutable tag is committed to
-`gitops/otel-demo/values.yaml`, validate the loaded image, Argo CD state,
-rollout, and Recommendation API:
+This command does not update Git, GitHub, or Argo CD. It only:
+
+1. reads the current commit from the sibling `otel-demo-apps` repository;
+2. builds `otel-demo/recommendation:local-<short-commit>`;
+3. loads that image into the kind node.
+
+To deploy a new Recommendation build:
+
+1. commit the Recommendation source change in `otel-demo-apps` so it has a new
+   Git SHA; the commit can remain on a local development branch;
+2. run `make recommendation-build-load`;
+3. copy the printed tag into `gitops/otel-demo/values.yaml`;
+4. commit and push the `otel-demo-local` values change;
+5. let Argo CD detect the commit and roll out the new image;
+6. run:
 
 ```bash
 make recommendation-validate
 ```
+
+There is no local GitHub Actions image-release job. This manual loop is kept
+small so that image creation, the kind runtime, Git desired state, and Argo CD
+reconciliation remain visible while learning.
 
 Validate the observability backends and real telemetry data:
 
