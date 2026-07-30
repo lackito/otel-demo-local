@@ -9,7 +9,6 @@ cluster_name="otel-demo-local"
 workload_namespace="opentelemetry-demo"
 direct_image_repository="otel-demo/recommendation"
 registry_image_repository="ghcr.io/lackito/otel-demo-local-recommendation"
-source_ref_file="${repository_root}/config/recommendation-source-ref"
 demo_url="http://otel-demo.localhost"
 
 if [[ ! -f "${kubeconfig_path}" ]]; then
@@ -19,13 +18,6 @@ fi
 
 apps_revision="$(git -C "${apps_repository}" rev-parse HEAD)"
 direct_image="${direct_image_repository}:local-${apps_revision:0:12}"
-registry_tag="$(tr -d '[:space:]' < "${source_ref_file}")"
-registry_image="${registry_image_repository}:${registry_tag}"
-
-if [[ ! "${registry_tag}" =~ ^[0-9a-f]{40}$ ]]; then
-  echo "${source_ref_file} must contain one full lowercase Git SHA." >&2
-  exit 1
-fi
 
 application_state="$(
   kubectl \
@@ -62,11 +54,16 @@ if [[ "${deployed_image}" == "${direct_image}" ]]; then
     exit 1
   fi
   delivery_mode="direct kind load"
-elif [[ "${deployed_image}" == "${registry_image}" ]]; then
+elif [[ "${deployed_image}" == "${registry_image_repository}:"* ]]; then
+  registry_tag="${deployed_image#"${registry_image_repository}:"}"
+  if [[ ! "${registry_tag}" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "Registry image tag is not a full Git commit SHA: ${registry_tag}" >&2
+    exit 1
+  fi
   delivery_mode="local CI and GHCR"
 else
   echo "Recommendation uses ${deployed_image}." >&2
-  echo "Expected ${direct_image} or ${registry_image}." >&2
+  echo "Expected ${direct_image} or ${registry_image_repository}:<full-git-sha>." >&2
   exit 1
 fi
 

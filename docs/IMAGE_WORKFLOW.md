@@ -60,10 +60,9 @@ GHCR is the recommended durable registry.
 1. Build the Recommendation image for the kind node's native architecture and
    load it directly into kind.
 2. Validate the complete image-to-GitOps-to-Argo rollout locally.
-3. Select an application commit through
-   `config/recommendation-source-ref`.
-4. Let the local repository's CI workflow build `linux/arm64`, publish the
-   immutable image to GHCR, and update local desired state.
+3. Push a Recommendation commit to the `otel-demo-apps/local` branch.
+4. Let its local release workflow build `linux/arm64`, publish the immutable
+   image to GHCR, and update local desired state.
 5. Optionally run a connected local registry later as a focused registry and
    container-runtime learning exercise.
 
@@ -81,10 +80,10 @@ make recommendation-build-load
 make recommendation-validate
 ```
 
-The durable loop begins when a full application commit SHA is committed to
-`config/recommendation-source-ref`. The local GitHub Actions workflow:
+The durable loop begins when Recommendation code is pushed to the
+`otel-demo-apps/local` branch. Its local GitHub Actions workflow:
 
-1. checks out that exact commit from `otel-demo-apps`;
+1. uses the pushed commit SHA automatically;
 2. builds and publishes
    `ghcr.io/lackito/otel-demo-local-recommendation:<full-sha>`;
 3. updates only `gitops/otel-demo/values.yaml`;

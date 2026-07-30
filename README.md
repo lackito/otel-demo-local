@@ -41,9 +41,6 @@ otel-demo-local
 ├── kind/ and terraform/
 │   └── Create the cluster, install platform components, and register Argo CD
 │
-├── config/ and .github/workflows/
-│   └── Select, build, and publish a local Recommendation release
-│
 └── gitops/otel-demo/
     ├── values.yaml
     └── manifests/
@@ -82,32 +79,29 @@ EKS environment.
 
 ## Local CI workflow
 
-The local release workflow is owned entirely by this repository:
+The local release workflow lives beside the application code in
+`otel-demo-apps`. A branch determines which environment receives a release:
 
 ```text
-config/recommendation-source-ref
-                |
-                v
-.github/workflows/recommendation-local-release.yml
-                |
-                +-- checks out that exact otel-demo-apps commit
-                +-- builds linux/arm64 with GitHub Actions
-                +-- publishes an immutable image to GHCR
-                +-- updates gitops/otel-demo/values.yaml
-                |
-                v
-Local Argo CD detects the generated values commit
-                |
-                v
+Push Recommendation code to otel-demo-apps/local
+                       |
+                       v
+otel-demo-apps local release workflow
+                       |
+                       +-- uses the pushed commit SHA
+                       +-- builds linux/arm64
+                       +-- publishes an immutable GHCR image
+                       +-- updates this repository's values.yaml
+                       |
+                       v
+Local Argo CD detects the generated commit on otel-demo-local/main
+                       |
+                       v
 kind pulls and deploys the GHCR image
 ```
 
-To select a new Recommendation version, put its full 40-character commit SHA
-in `config/recommendation-source-ref`, then commit and push that change to
-`otel-demo-local/main`. The selected commit must exist on GitHub so the runner
-can check it out.
-
-This workflow never updates `otel-demo-gitops`, pushes to Amazon ECR, or
+The workflow uses the commit that triggered it; there is no SHA selection or
+copying step. It never updates `otel-demo-gitops`, pushes to Amazon ECR, or
 changes the AWS environment.
 
 ## Prerequisites
@@ -122,6 +116,8 @@ changes the AWS environment.
   separately configured private-repository credentials
 - a public `ghcr.io/lackito/otel-demo-local-recommendation` package for
   anonymous image pulls from kind
+- a fine-grained `LOCAL_REPOSITORY_TOKEN` secret in `otel-demo-apps`, with
+  **Contents: Read and write** access only to `otel-demo-local`
 
 Check the workstation:
 
@@ -282,25 +278,23 @@ for a remote build.
 
 To publish and deploy through local CI:
 
-1. push the desired `otel-demo-apps` commit to GitHub;
-2. copy its full SHA into `config/recommendation-source-ref`;
-3. commit and push that file to `otel-demo-local/main`;
-4. wait for `Release Recommendation to local Kubernetes`;
-5. let its generated values commit reach Argo CD;
-6. run `make recommendation-validate`.
+1. commit Recommendation changes on the `otel-demo-apps/local` branch;
+2. push that branch;
+3. wait for `Release recommendation service to local Kubernetes`;
+4. let its generated values commit reach Argo CD;
+5. run `make recommendation-validate`.
 
-The workflow uses the repository `GITHUB_TOKEN`; it requires `contents: write`
-and `packages: write`. No AWS credentials or cross-repository write token are
-used.
+The workflow uses the `otel-demo-apps` repository `GITHUB_TOKEN` to publish to
+GHCR and `LOCAL_REPOSITORY_TOKEN` to update only `otel-demo-local`.
 
-Before the first run, confirm **Settings → Actions → General → Workflow
-permissions** allows read and write access.
+The GHCR package must be public. New packages may initially be private, so the
+workflow deliberately stops before changing Git desired state if anonymous
+pull access fails. Make `otel-demo-local-recommendation` public in its GitHub
+package settings, then rerun the failed workflow.
 
-The first workflow run creates the GHCR package. New packages may initially be
-private, so the workflow deliberately stops before changing Git desired state
-if anonymous pull access fails. Make
-`otel-demo-local-recommendation` public in its GitHub package settings, then
-rerun the failed workflow. Later source-reference changes are fully automatic.
+If the package was originally created by a workflow in `otel-demo-local`, open
+its **Manage Actions access** settings and grant `otel-demo-apps` write access.
+Later pushes to the `local` branch are fully automatic.
 
 Validate the observability backends and real telemetry data:
 
