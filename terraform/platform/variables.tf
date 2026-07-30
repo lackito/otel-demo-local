@@ -17,9 +17,9 @@ variable "opentelemetry_demo_chart_version" {
 }
 
 variable "gitops_repository_url" {
-  description = "GitOps repository watched by the local Argo CD Application."
+  description = "Local platform repository watched by its Argo CD Application."
   type        = string
-  default     = "https://github.com/lackito/otel-demo-gitops.git"
+  default     = "https://github.com/lackito/otel-demo-local.git"
 }
 
 variable "gitops_revision" {

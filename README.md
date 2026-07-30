@@ -6,8 +6,8 @@ This repository creates a disposable local Kubernetes cluster while preserving
 the ownership model used by the AWS implementation:
 
 - local cluster and platform bootstrapping belong here;
+- local Kubernetes desired state and Argo CD registration belong here;
 - application source belongs in `otel-demo-apps`;
-- Kubernetes desired state belongs in `otel-demo-gitops`;
 - Argo CD, rather than lifecycle scripts or Terraform, owns application
   workloads.
 
@@ -91,9 +91,9 @@ NGINX Gateway Fabric:
 | 80 | 31437 | HTTP 80 |
 | 443 | 30478 | HTTPS 443 |
 
-The GitOps repository now provides the Gateway resource, which causes NGINX
-Gateway Fabric to create the local data plane. Its `HTTPRoute` exposes the demo
-at `http://otel-demo.localhost`.
+This repository's `gitops/otel-demo` directory provides the Gateway resource,
+which causes NGINX Gateway Fabric to create the local data plane. Its
+`HTTPRoute` exposes the demo at `http://otel-demo.localhost`.
 
 ## Platform lifecycle
 
@@ -144,8 +144,9 @@ into kind:
 make recommendation-build-load
 ```
 
-After the matching immutable tag is committed to the local GitOps values,
-validate the loaded image, Argo CD state, rollout, and Recommendation API:
+After the matching immutable tag is committed to
+`gitops/otel-demo/values.yaml`, validate the loaded image, Argo CD state,
+rollout, and Recommendation API:
 
 ```bash
 make recommendation-validate

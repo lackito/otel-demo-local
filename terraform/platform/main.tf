@@ -26,8 +26,8 @@ module "argocd_application" {
   chart_version         = var.opentelemetry_demo_chart_version
   gitops_repository_url = var.gitops_repository_url
   gitops_revision       = var.gitops_revision
-  values_file           = "applications/otel-demo-local/values.yaml"
-  manifests_path        = "applications/otel-demo-local/manifests"
+  values_file           = "gitops/otel-demo/values.yaml"
+  manifests_path        = "gitops/otel-demo/manifests"
   destination_namespace = "opentelemetry-demo"
 
   depends_on = [

@@ -19,29 +19,29 @@ Terraform
 Argo CD Application registration
         |
         v
-otel-demo-gitops
+gitops/otel-demo in this repository
         |
         v
 OpenTelemetry Demo workloads
 ```
 
-`otel-demo-local` owns the cluster and shared platform. `otel-demo-gitops`
-owns application desired state. `otel-demo-apps` owns application source and
-container builds.
+`otel-demo-local` owns the cluster, platform, local Argo CD registration, and
+local application desired state. `otel-demo-apps` remains only the source used
+when rebuilding a demo service.
 
 ## Networking
 
 NGINX Gateway Fabric has separate control and data planes.
 
 - Terraform installs the control plane.
-- The GitOps-owned Gateway causes NGINX Gateway Fabric to create the data
+- The locally owned Gateway causes NGINX Gateway Fabric to create the data
   plane.
 - HTTPRoute resources attach application routes to that Gateway.
 - Fixed NodePorts connect the generated data plane to kind's host port
   mappings.
 
-Gateway and HTTPRoute resources belong with application desired state in the
-GitOps repository.
+Gateway and HTTPRoute resources live with the other local application desired
+state under `gitops/otel-demo`.
 
 ## Local application image flow
 
@@ -55,14 +55,15 @@ Native Docker build tagged with the apps Git revision
 kind image load
         |
         v
-Local GitOps image override
+Local image override in gitops/otel-demo/values.yaml
         |
         v
 Argo CD Recommendation rollout
 ```
 
-Direct image loading is the first local-development stage. GHCR will replace
-the machine-local image handoff when the workflow is automated for CI.
+Direct image loading is the intentionally small local-development workflow.
+Registry automation can be added later without coupling this repository to the
+AWS delivery pipeline.
 
 ## Context isolation
 

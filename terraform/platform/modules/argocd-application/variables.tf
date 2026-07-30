@@ -19,7 +19,7 @@ variable "gitops_revision" {
 }
 
 variable "values_file" {
-  description = "GitOps repository path to the local Helm values."
+  description = "Local repository path to the Helm values."
   type        = string
 }
 
@@ -32,4 +32,3 @@ variable "destination_namespace" {
   description = "Namespace where Argo CD deploys the application."
   type        = string
 }
-

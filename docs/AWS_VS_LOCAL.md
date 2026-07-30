@@ -12,6 +12,7 @@
 | Workload identity | IRSA and AWS OIDC | Not required |
 | Terraform backend | Amazon S3 | Local state |
 | GitOps engine | Argo CD | Argo CD |
+| Desired-state location | `otel-demo-gitops` | `gitops/otel-demo` inside `otel-demo-local` |
 | Workload owner | Argo CD | Argo CD |
 | Feature-flag evaluation | `flagd` | `flagd` |
 | Feature-flag editor | `flagd-ui` sidecar | Disabled in the local arm64 overlay |
@@ -19,6 +20,10 @@
 The local platform is not intended to imitate AWS networking internals.
 Instead, it preserves the same responsibility boundary: Terraform installs the
 traffic controller, while GitOps defines how application traffic is routed.
+
+The implementations do not share desired-state files or Argo CD Application
+definitions. AWS continues to watch `otel-demo-gitops`; the local Argo CD
+instance watches `otel-demo-local`.
 
 The local `HTTPRoute` is the equivalent of the AWS application Ingress at the
 responsibility level: both are GitOps-owned desired state that connect an

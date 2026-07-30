@@ -44,7 +44,7 @@ Advantages:
 
 - one registry is reachable from the workstation, GitHub Actions, and clusters;
 - supports immutable commit tags and multi-architecture image indexes;
-- fits the existing GitHub repositories and GitOps promotion workflow;
+- can support a future workflow owned specifically by the local project;
 - makes a fresh cluster reproducible from Git plus registry artifacts.
 
 Tradeoffs:
@@ -62,11 +62,21 @@ GHCR is the recommended durable registry.
 2. Validate the complete image-to-GitOps-to-Argo rollout locally.
 3. Optionally run a connected local registry as a focused registry and
    container-runtime learning exercise.
-4. Publish `linux/amd64` and `linux/arm64` under one immutable commit tag in
-   GHCR.
-5. Have CI update only the local GitOps image tag; Argo CD remains the workload
-   deployer.
+4. Consider GHCR only after the standalone local workflow is understood and a
+   remote CI use case is needed.
 
 This progression keeps the first feedback loop small while ending with a
-workflow suitable for both the Apple Silicon development cluster and amd64
-GitHub/AWS environments.
+workflow that is independent of the AWS GitOps and ECR pipeline.
+
+## Current delivery policy
+
+The local project uses direct kind loading. The image override lives at
+`gitops/otel-demo/values.yaml` in this repository, and the local Argo CD
+Application watches this repository only.
+
+Direct kind loading remains available for the fastest development loop:
+
+```bash
+make recommendation-build-load
+make recommendation-validate
+```
