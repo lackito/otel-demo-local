@@ -48,8 +48,8 @@ components:
     # Direct development uses a local-<short-sha> image loaded into kind.
     # Local CI replaces these fields with a full-SHA GHCR image.
     imageOverride:
-      repository: otel-demo/recommendation
-      tag: local-939117adf132
+      repository: ghcr.io/lackito/otel-demo-local-recommendation
+      tag: 939117adf132529dbe007b7c6e38c57133b6e542
       pullPolicy: IfNotPresent
 
   flagd:
