@@ -34,12 +34,15 @@ Local Argo CD watches this repository:
 https://github.com/lackito/otel-demo-local.git
 ```
 
-The repository has two separate areas of responsibility:
+The repository has separate areas of responsibility:
 
 ```text
 otel-demo-local
 ├── kind/ and terraform/
 │   └── Create the cluster, install platform components, and register Argo CD
+│
+├── config/ and .github/workflows/
+│   └── Select, build, and publish a local Recommendation release
 │
 └── gitops/otel-demo/
     ├── values.yaml
@@ -77,6 +80,36 @@ Argo CD with private-repository credentials.
 `otel-demo-gitops` is not part of this local flow. It is reserved for the AWS
 EKS environment.
 
+## Local CI workflow
+
+The local release workflow is owned entirely by this repository:
+
+```text
+config/recommendation-source-ref
+                |
+                v
+.github/workflows/recommendation-local-release.yml
+                |
+                +-- checks out that exact otel-demo-apps commit
+                +-- builds linux/arm64 with GitHub Actions
+                +-- publishes an immutable image to GHCR
+                +-- updates gitops/otel-demo/values.yaml
+                |
+                v
+Local Argo CD detects the generated values commit
+                |
+                v
+kind pulls and deploys the GHCR image
+```
+
+To select a new Recommendation version, put its full 40-character commit SHA
+in `config/recommendation-source-ref`, then commit and push that change to
+`otel-demo-local/main`. The selected commit must exist on GitHub so the runner
+can check it out.
+
+This workflow never updates `otel-demo-gitops`, pushes to Amazon ECR, or
+changes the AWS environment.
+
 ## Prerequisites
 
 - Docker-compatible runtime
@@ -87,6 +120,8 @@ EKS environment.
 - Make
 - anonymous read access to `lackito/otel-demo-local` from Argo CD, or
   separately configured private-repository credentials
+- a public `ghcr.io/lackito/otel-demo-local-recommendation` package for
+  anonymous image pulls from kind
 
 Check the workstation:
 
@@ -96,12 +131,11 @@ make prerequisites
 
 ## Fresh cluster order
 
-The local Recommendation image is loaded directly into kind rather than
-pulled from a registry. On a brand-new cluster, use this order:
+After the local CI workflow has published the GHCR image and updated the
+values file, a brand-new cluster uses this order:
 
 ```bash
 make cluster-create
-make recommendation-build-load
 make platform-init
 make platform-plan
 make platform-apply
@@ -109,10 +143,12 @@ make application-validate
 make recommendation-validate
 ```
 
-Before applying the platform, confirm that the tag printed by
-`make recommendation-build-load` matches the tag in
-`gitops/otel-demo/values.yaml`. If the tag changes, commit and push the values
-change before running `make platform-apply`.
+Argo CD reads the GHCR image reference from Git and kind pulls the image. No
+workstation-local image survives or is required.
+
+Direct kind loading remains available as the faster development loop. When
+using that mode on a new cluster, run `make recommendation-build-load` after
+`make cluster-create` and before `make platform-apply`.
 
 ## Cluster lifecycle
 
@@ -210,6 +246,8 @@ response, and hostname isolation:
 make routing-validate
 ```
 
+### Fast development: direct kind loading
+
 Build Recommendation from the sibling `otel-demo-apps` repository and load it
 into kind:
 
@@ -237,9 +275,32 @@ To deploy a new Recommendation build:
 make recommendation-validate
 ```
 
-There is no local GitHub Actions image-release job. This manual loop is kept
-small so that image creation, the kind runtime, Git desired state, and Argo CD
-reconciliation remain visible while learning.
+This manual loop remains useful while editing code because it avoids waiting
+for a remote build.
+
+### Repeatable delivery: local CI and GHCR
+
+To publish and deploy through local CI:
+
+1. push the desired `otel-demo-apps` commit to GitHub;
+2. copy its full SHA into `config/recommendation-source-ref`;
+3. commit and push that file to `otel-demo-local/main`;
+4. wait for `Release Recommendation to local Kubernetes`;
+5. let its generated values commit reach Argo CD;
+6. run `make recommendation-validate`.
+
+The workflow uses the repository `GITHUB_TOKEN`; it requires `contents: write`
+and `packages: write`. No AWS credentials or cross-repository write token are
+used.
+
+Before the first run, confirm **Settings → Actions → General → Workflow
+permissions** allows read and write access.
+
+The first workflow run creates the GHCR package. New packages may initially be
+private, so the workflow deliberately stops before changing Git desired state
+if anonymous pull access fails. Make
+`otel-demo-local-recommendation` public in its GitHub package settings, then
+rerun the failed workflow. Later source-reference changes are fully automatic.
 
 Validate the observability backends and real telemetry data:
 

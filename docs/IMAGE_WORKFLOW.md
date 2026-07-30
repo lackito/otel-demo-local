@@ -43,15 +43,15 @@ it is not the primary delivery path for this project.
 Advantages:
 
 - one registry is reachable from the workstation, GitHub Actions, and clusters;
-- supports immutable commit tags and multi-architecture image indexes;
-- can support a future workflow owned specifically by the local project;
+- supports immutable commit tags;
+- is used by a workflow owned specifically by the local project;
 - makes a fresh cluster reproducible from Git plus registry artifacts.
 
 Tradeoffs:
 
 - requires package permissions and authentication decisions;
 - local pulls depend on network access;
-- CI must build and test both target architectures.
+- emulated arm64 builds are slower on GitHub-hosted runners.
 
 GHCR is the recommended durable registry.
 
@@ -60,23 +60,35 @@ GHCR is the recommended durable registry.
 1. Build the Recommendation image for the kind node's native architecture and
    load it directly into kind.
 2. Validate the complete image-to-GitOps-to-Argo rollout locally.
-3. Optionally run a connected local registry as a focused registry and
+3. Select an application commit through
+   `config/recommendation-source-ref`.
+4. Let the local repository's CI workflow build `linux/arm64`, publish the
+   immutable image to GHCR, and update local desired state.
+5. Optionally run a connected local registry later as a focused registry and
    container-runtime learning exercise.
-4. Consider GHCR only after the standalone local workflow is understood and a
-   remote CI use case is needed.
 
 This progression keeps the first feedback loop small while ending with a
 workflow that is independent of the AWS GitOps and ECR pipeline.
 
 ## Current delivery policy
 
-The local project uses direct kind loading. The image override lives at
-`gitops/otel-demo/values.yaml` in this repository, and the local Argo CD
-Application watches this repository only.
+The local project supports two independent feedback loops.
 
-Direct kind loading remains available for the fastest development loop:
+Direct kind loading is the fastest development loop:
 
 ```bash
 make recommendation-build-load
 make recommendation-validate
 ```
+
+The durable loop begins when a full application commit SHA is committed to
+`config/recommendation-source-ref`. The local GitHub Actions workflow:
+
+1. checks out that exact commit from `otel-demo-apps`;
+2. builds and publishes
+   `ghcr.io/lackito/otel-demo-local-recommendation:<full-sha>`;
+3. updates only `gitops/otel-demo/values.yaml`;
+4. commits the desired-state change to `otel-demo-local`;
+5. leaves deployment to local Argo CD.
+
+AWS credentials, ECR, and `otel-demo-gitops` are outside this workflow.

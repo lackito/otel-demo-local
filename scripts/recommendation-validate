@@ -7,7 +7,9 @@ apps_repository="${APPS_REPOSITORY:-${repository_root}/../otel-demo-apps}"
 kubeconfig_path="${repository_root}/.state/kubeconfig"
 cluster_name="otel-demo-local"
 workload_namespace="opentelemetry-demo"
-image_repository="${RECOMMENDATION_IMAGE_REPOSITORY:-otel-demo/recommendation}"
+direct_image_repository="otel-demo/recommendation"
+registry_image_repository="ghcr.io/lackito/otel-demo-local-recommendation"
+source_ref_file="${repository_root}/config/recommendation-source-ref"
 demo_url="http://otel-demo.localhost"
 
 if [[ ! -f "${kubeconfig_path}" ]]; then
@@ -16,8 +18,14 @@ if [[ ! -f "${kubeconfig_path}" ]]; then
 fi
 
 apps_revision="$(git -C "${apps_repository}" rev-parse HEAD)"
-image_tag="${RECOMMENDATION_IMAGE_TAG:-local-${apps_revision:0:12}}"
-expected_image="${image_repository}:${image_tag}"
+direct_image="${direct_image_repository}:local-${apps_revision:0:12}"
+registry_tag="$(tr -d '[:space:]' < "${source_ref_file}")"
+registry_image="${registry_image_repository}:${registry_tag}"
+
+if [[ ! "${registry_tag}" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "${source_ref_file} must contain one full lowercase Git SHA." >&2
+  exit 1
+fi
 
 application_state="$(
   kubectl \
@@ -32,19 +40,6 @@ if [[ "${application_state}" != "Synced Healthy" ]]; then
   exit 1
 fi
 
-loaded_image="$(
-  docker exec \
-    "${cluster_name}-control-plane" \
-    crictl images \
-    --output json |
-    grep -F "${expected_image}" || true
-)"
-
-if [[ -z "${loaded_image}" ]]; then
-  echo "${expected_image} is not loaded in the kind node." >&2
-  exit 1
-fi
-
 deployed_image="$(
   kubectl \
     --kubeconfig "${kubeconfig_path}" \
@@ -53,8 +48,25 @@ deployed_image="$(
     --output jsonpath='{.spec.template.spec.containers[0].image}'
 )"
 
-if [[ "${deployed_image}" != "${expected_image}" ]]; then
-  echo "Recommendation uses ${deployed_image}; expected ${expected_image}." >&2
+if [[ "${deployed_image}" == "${direct_image}" ]]; then
+  loaded_image="$(
+    docker exec \
+      "${cluster_name}-control-plane" \
+      crictl images \
+      --output json |
+      grep -F "${direct_image}" || true
+  )"
+
+  if [[ -z "${loaded_image}" ]]; then
+    echo "${direct_image} is not loaded in the kind node." >&2
+    exit 1
+  fi
+  delivery_mode="direct kind load"
+elif [[ "${deployed_image}" == "${registry_image}" ]]; then
+  delivery_mode="local CI and GHCR"
+else
+  echo "Recommendation uses ${deployed_image}." >&2
+  echo "Expected ${direct_image} or ${registry_image}." >&2
   exit 1
 fi
 
@@ -77,7 +89,8 @@ if [[ -z "${api_response}" || "${api_response}" != *'"id"'* ]]; then
   exit 1
 fi
 
-echo "Milestone 7 Recommendation validation passed."
+echo "Recommendation validation passed."
 echo "Application: ${application_state}"
 echo "Image: ${deployed_image}"
+echo "Delivery: ${delivery_mode}"
 echo "Recommendation API: HTTP 200 with product data"
