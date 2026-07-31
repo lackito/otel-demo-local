@@ -296,6 +296,65 @@ package settings, then rerun the failed workflow.
 
 Later pushes to the `local` branch are fully automatic.
 
+### Observe an end-to-end GitOps update
+
+After the application workflow succeeds, verify that its generated desired
+state reached this repository:
+
+```bash
+git fetch origin main
+git log --oneline -3 origin/main -- gitops/otel-demo/values.yaml
+git show origin/main:gitops/otel-demo/values.yaml |
+  sed -n '/^  recommendation:/,/^  [a-z]/p'
+```
+
+Expected evidence:
+
+- a generated commit named `chore(recommendation): deploy <commit-sha>`;
+- repository `ghcr.io/lackito/otel-demo-local-recommendation`;
+- a full 40-character tag matching the triggering `otel-demo-apps` commit.
+
+To observe reconciliation in the Argo CD GUI, first obtain the password:
+
+```bash
+kubectl --kubeconfig .state/kubeconfig \
+  get secret argocd-initial-admin-secret \
+  --namespace argocd \
+  --output jsonpath='{.data.password}' |
+  base64 --decode
+echo
+```
+
+In another terminal, keep this port-forward running:
+
+```bash
+kubectl --kubeconfig .state/kubeconfig \
+  port-forward --namespace argocd service/argocd-server 8080:443
+```
+
+Open `https://localhost:8080`, accept the local certificate warning, and log
+in as `admin`. Select `otel-demo-local` and observe:
+
+1. **Refresh** discovers the generated `otel-demo-local/main` commit;
+2. sync briefly changes through `OutOfSync` or `Progressing`;
+3. automated synchronization updates the Recommendation Deployment;
+4. the application returns to `Synced` and `Healthy`;
+5. **History and Rollback** records the deployed source revision;
+6. the resource tree shows the replacement Recommendation pod becoming
+   healthy.
+
+Finally, validate from the workstation:
+
+```bash
+make application-validate
+make recommendation-validate
+```
+
+`make recommendation-validate` prints the deployed GHCR image and reports
+`Delivery: local CI and GHCR`. The GitHub workflow run, Git commit, Argo CD
+history, Deployment image, and API response together form the complete audit
+trail.
+
 Validate the observability backends and real telemetry data:
 
 ```bash
