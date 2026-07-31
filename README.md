@@ -118,6 +118,8 @@ changes the AWS environment.
   anonymous image pulls from kind
 - a fine-grained `LOCAL_REPOSITORY_TOKEN` secret in `otel-demo-apps`, with
   **Contents: Read and write** access only to `otel-demo-local`
+- a classic `GHCR_PAT` secret in `otel-demo-apps`, owned by `lackito` and
+  scoped to `write:packages`
 
 Check the workstation:
 
@@ -284,16 +286,14 @@ To publish and deploy through local CI:
 4. let its generated values commit reach Argo CD;
 5. run `make recommendation-validate`.
 
-The workflow uses the `otel-demo-apps` repository `GITHUB_TOKEN` to publish to
-GHCR and `LOCAL_REPOSITORY_TOKEN` to update only `otel-demo-local`.
+The workflow uses `GHCR_PAT` to publish to GHCR and
+`LOCAL_REPOSITORY_TOKEN` to update only `otel-demo-local`.
 
 The GHCR package must be public. New packages may initially be private, so the
 workflow deliberately stops before changing Git desired state if anonymous
 pull access fails. Make `otel-demo-local-recommendation` public in its GitHub
 package settings, then rerun the failed workflow.
 
-If the package was originally created by a workflow in `otel-demo-local`, open
-its **Manage Actions access** settings and grant `otel-demo-apps` write access.
 Later pushes to the `local` branch are fully automatic.
 
 Validate the observability backends and real telemetry data:
