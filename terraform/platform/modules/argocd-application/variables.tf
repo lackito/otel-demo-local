@@ -3,6 +3,11 @@ variable "application_name" {
   type        = string
 }
 
+variable "cluster_context" {
+  description = "Kubernetes context targeted by Argo CD Application lifecycle commands."
+  type        = string
+}
+
 variable "chart_version" {
   description = "Pinned OpenTelemetry Demo Helm chart version."
   type        = string

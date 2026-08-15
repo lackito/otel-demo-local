@@ -4,7 +4,7 @@ output "cluster_context" {
 }
 
 output "kubeconfig_path" {
-  description = "Isolated kubeconfig used by the local platform."
+  description = "Standard kubeconfig used by the local platform."
   value       = local.kubeconfig_path
 }
 
@@ -22,4 +22,3 @@ output "argocd_application_name" {
   description = "Local Argo CD Application registered by Terraform."
   value       = module.argocd_application.name
 }
-

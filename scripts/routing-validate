@@ -2,8 +2,7 @@
 
 set -euo pipefail
 
-repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-kubeconfig_path="${repository_root}/.state/kubeconfig"
+cluster_context="kind-otel-demo-local"
 workload_namespace="opentelemetry-demo"
 route_name="otel-demo"
 gateway_name="otel-demo"
@@ -12,15 +11,16 @@ timeout_seconds=300
 poll_interval_seconds=5
 elapsed_seconds=0
 
-if [[ ! -f "${kubeconfig_path}" ]]; then
-  echo "Expected kubeconfig does not exist: ${kubeconfig_path}" >&2
+if ! kubectl config get-contexts "${cluster_context}" --no-headers >/dev/null 2>&1; then
+  echo "Expected context ${cluster_context} does not exist in the standard kubeconfig." >&2
+  echo "Run 'make cluster-create' to create or restore it." >&2
   exit 1
 fi
 
 while ((elapsed_seconds < timeout_seconds)); do
   route_conditions="$(
     kubectl \
-      --kubeconfig "${kubeconfig_path}" \
+      --context "${cluster_context}" \
       get httproute "${route_name}" \
       --namespace "${workload_namespace}" \
       --output jsonpath='{range .status.parents[*].conditions[*]}{.type}={.status}/{.reason}{" "}{end}' \
@@ -46,7 +46,7 @@ fi
 
 attached_routes="$(
   kubectl \
-    --kubeconfig "${kubeconfig_path}" \
+    --context "${cluster_context}" \
     get gateway "${gateway_name}" \
     --namespace "${workload_namespace}" \
     --output jsonpath='{.status.listeners[?(@.name=="http")].attachedRoutes}'

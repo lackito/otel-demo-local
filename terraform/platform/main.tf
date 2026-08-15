@@ -1,7 +1,7 @@
 module "gateway_api" {
   source = "./modules/gateway-api"
 
-  kubeconfig_path              = local.kubeconfig_path
+  cluster_context              = local.cluster_context
   nginx_gateway_fabric_version = var.nginx_gateway_fabric_version
 }
 
@@ -24,6 +24,7 @@ module "argocd_application" {
 
   application_name      = "otel-demo-local"
   chart_version         = var.opentelemetry_demo_chart_version
+  cluster_context       = local.cluster_context
   gitops_repository_url = var.gitops_repository_url
   gitops_revision       = var.gitops_revision
   values_file           = "gitops/otel-demo/values.yaml"

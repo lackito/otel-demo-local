@@ -2,22 +2,22 @@
 
 set -euo pipefail
 
-repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-kubeconfig_path="${repository_root}/.state/kubeconfig"
+cluster_context="kind-otel-demo-local"
 cluster_name="otel-demo-local"
 workload_namespace="opentelemetry-demo"
 demo_url="http://otel-demo.localhost"
 soak_seconds="${OBSERVABILITY_SOAK_SECONDS:-0}"
 sample_interval_seconds=30
 
-if [[ ! -f "${kubeconfig_path}" ]]; then
-  echo "Expected kubeconfig does not exist: ${kubeconfig_path}" >&2
+if ! kubectl config get-contexts "${cluster_context}" --no-headers >/dev/null 2>&1; then
+  echo "Expected context ${cluster_context} does not exist in the standard kubeconfig." >&2
+  echo "Run 'make cluster-create' to create or restore it." >&2
   exit 1
 fi
 
 observability_pods() {
   kubectl \
-    --kubeconfig "${kubeconfig_path}" \
+    --context "${cluster_context}" \
     get pods \
     --namespace "${workload_namespace}" \
     --output json
@@ -64,7 +64,7 @@ validate_no_oom() {
 validate_apis() {
   prometheus_response="$(
     kubectl \
-      --kubeconfig "${kubeconfig_path}" \
+      --context "${cluster_context}" \
       get --raw \
       "/api/v1/namespaces/${workload_namespace}/services/http:prometheus:9090/proxy/api/v1/query?query=count(up)"
   )"
@@ -81,7 +81,7 @@ validate_apis() {
 
   jaeger_services="$(
     kubectl \
-      --kubeconfig "${kubeconfig_path}" \
+      --context "${cluster_context}" \
       get --raw \
       "/api/v1/namespaces/${workload_namespace}/services/http:jaeger-query:16686/proxy/jaeger/ui/api/services"
   )"
@@ -94,7 +94,7 @@ validate_apis() {
 
   jaeger_traces="$(
     kubectl \
-      --kubeconfig "${kubeconfig_path}" \
+      --context "${cluster_context}" \
       get --raw \
       "/api/v1/namespaces/${workload_namespace}/services/http:jaeger-query:16686/proxy/jaeger/ui/api/traces?service=recommendation&limit=1&lookback=1h"
   )"
@@ -106,7 +106,7 @@ validate_apis() {
 
   grafana_health="$(
     kubectl \
-      --kubeconfig "${kubeconfig_path}" \
+      --context "${cluster_context}" \
       get --raw \
       "/api/v1/namespaces/${workload_namespace}/services/http:grafana:80/proxy/grafana/api/health"
   )"
@@ -118,7 +118,7 @@ validate_apis() {
 
   grafana_datasources="$(
     kubectl \
-      --kubeconfig "${kubeconfig_path}" \
+      --context "${cluster_context}" \
       get --raw \
       "/api/v1/namespaces/${workload_namespace}/services/http:grafana:80/proxy/grafana/api/datasources"
   )"
@@ -161,7 +161,7 @@ sample_memory() {
 
 application_state="$(
   kubectl \
-    --kubeconfig "${kubeconfig_path}" \
+    --context "${cluster_context}" \
     get application otel-demo-local \
     --namespace argocd \
     --output jsonpath='{.status.sync.status} {.status.health.status}'
@@ -174,7 +174,7 @@ fi
 
 for deployment in jaeger prometheus grafana otel-collector; do
   kubectl \
-    --kubeconfig "${kubeconfig_path}" \
+    --context "${cluster_context}" \
     rollout status "deployment/${deployment}" \
     --namespace "${workload_namespace}" \
     --timeout=180s

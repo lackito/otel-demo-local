@@ -1,8 +1,5 @@
 .DS_Store
 
-# Local cluster state
-.state/
-
 # Terraform state will remain local for this workstation-only cluster.
 **/.terraform/
 *.tfstate

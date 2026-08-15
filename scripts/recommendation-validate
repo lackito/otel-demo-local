@@ -4,15 +4,16 @@ set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 apps_repository="${APPS_REPOSITORY:-${repository_root}/../otel-demo-apps}"
-kubeconfig_path="${repository_root}/.state/kubeconfig"
+cluster_context="kind-otel-demo-local"
 cluster_name="otel-demo-local"
 workload_namespace="opentelemetry-demo"
 direct_image_repository="otel-demo/recommendation"
 registry_image_repository="ghcr.io/lackito/otel-demo-local-recommendation"
 demo_url="http://otel-demo.localhost"
 
-if [[ ! -f "${kubeconfig_path}" ]]; then
-  echo "Expected kubeconfig does not exist: ${kubeconfig_path}" >&2
+if ! kubectl config get-contexts "${cluster_context}" --no-headers >/dev/null 2>&1; then
+  echo "Expected context ${cluster_context} does not exist in the standard kubeconfig." >&2
+  echo "Run 'make cluster-create' to create or restore it." >&2
   exit 1
 fi
 
@@ -21,7 +22,7 @@ direct_image="${direct_image_repository}:local-${apps_revision:0:12}"
 
 application_state="$(
   kubectl \
-    --kubeconfig "${kubeconfig_path}" \
+    --context "${cluster_context}" \
     get application otel-demo-local \
     --namespace argocd \
     --output jsonpath='{.status.sync.status} {.status.health.status}'
@@ -34,7 +35,7 @@ fi
 
 deployed_image="$(
   kubectl \
-    --kubeconfig "${kubeconfig_path}" \
+    --context "${cluster_context}" \
     get deployment recommendation \
     --namespace "${workload_namespace}" \
     --output jsonpath='{.spec.template.spec.containers[0].image}'
@@ -68,7 +69,7 @@ else
 fi
 
 kubectl \
-  --kubeconfig "${kubeconfig_path}" \
+  --context "${cluster_context}" \
   rollout status deployment/recommendation \
   --namespace "${workload_namespace}" \
   --timeout=180s

@@ -168,25 +168,33 @@ Delete the cluster:
 make cluster-destroy
 ```
 
-## Context isolation
+## Kubernetes context
 
 The cluster is named `otel-demo-local` and its Kubernetes context is
 `kind-otel-demo-local`.
 
-Its kubeconfig is written to:
+The cluster registers that context in the standard kubeconfig:
 
 ```text
-.state/kubeconfig
+~/.kube/config
 ```
 
-Lifecycle commands always pass this path explicitly. They do not change the
-current context in the default kubeconfig, which may still point to AWS EKS.
+Repository automation selects `kind-otel-demo-local` explicitly, so it does
+not depend on whichever context is currently active. Terraform uses the same
+dedicated context in `~/.kube/config`.
 
-To inspect the local cluster manually:
+For interactive work, select the context once and then use normal Kubernetes
+and Helm commands:
 
 ```bash
-kubectl --kubeconfig .state/kubeconfig get nodes
+kubectl config use-context kind-otel-demo-local
+kubectl get nodes
+kubectl get pods --all-namespaces
+helm list --all-namespaces
 ```
+
+Run `make cluster-create` if the kind cluster already exists but the context
+needs to be restored in `~/.kube/config`.
 
 ## Local networking
 
@@ -317,7 +325,7 @@ Expected evidence:
 To observe reconciliation in the Argo CD GUI, first obtain the password:
 
 ```bash
-kubectl --kubeconfig .state/kubeconfig \
+kubectl \
   get secret argocd-initial-admin-secret \
   --namespace argocd \
   --output jsonpath='{.data.password}' |
@@ -328,7 +336,7 @@ echo
 In another terminal, keep this port-forward running:
 
 ```bash
-kubectl --kubeconfig .state/kubeconfig \
+kubectl \
   port-forward --namespace argocd service/argocd-server 8080:443
 ```
 
@@ -384,7 +392,7 @@ For direct service debugging, a temporary port-forward can still bypass the
 Gateway:
 
 ```bash
-kubectl --kubeconfig .state/kubeconfig \
+kubectl \
   port-forward --namespace opentelemetry-demo \
   service/frontend-proxy 18080:8080
 ```

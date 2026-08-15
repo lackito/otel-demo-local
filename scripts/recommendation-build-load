@@ -4,7 +4,7 @@ set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 apps_repository="${APPS_REPOSITORY:-${repository_root}/../otel-demo-apps}"
-kubeconfig_path="${repository_root}/.state/kubeconfig"
+cluster_context="kind-otel-demo-local"
 cluster_name="otel-demo-local"
 image_repository="${RECOMMENDATION_IMAGE_REPOSITORY:-otel-demo/recommendation}"
 
@@ -13,8 +13,9 @@ if [[ ! -f "${apps_repository}/apps/recommendation/Dockerfile" ]]; then
   exit 1
 fi
 
-if [[ ! -f "${kubeconfig_path}" ]]; then
-  echo "Expected kubeconfig does not exist: ${kubeconfig_path}" >&2
+if ! kubectl config get-contexts "${cluster_context}" --no-headers >/dev/null 2>&1; then
+  echo "Expected context ${cluster_context} does not exist in the standard kubeconfig." >&2
+  echo "Run 'make cluster-create' to create or restore it." >&2
   exit 1
 fi
 
@@ -24,7 +25,7 @@ image_reference="${image_repository}:${image_tag}"
 
 node_architecture="$(
   kubectl \
-    --kubeconfig "${kubeconfig_path}" \
+    --context "${cluster_context}" \
     get nodes \
     --output jsonpath='{.items[0].status.nodeInfo.architecture}'
 )"

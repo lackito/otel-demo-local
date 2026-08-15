@@ -4,11 +4,11 @@ set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cluster_name="otel-demo-local"
+cluster_context="kind-${cluster_name}"
 cluster_config="${repository_root}/kind/cluster.yaml"
-state_directory="${repository_root}/.state"
-kubeconfig_path="${state_directory}/kubeconfig"
+kubeconfig_path="${HOME}/.kube/config"
 
-mkdir -p "${state_directory}"
+mkdir -p "$(dirname "${kubeconfig_path}")"
 
 cluster_exists="false"
 
@@ -21,7 +21,16 @@ done < <(kind get clusters 2>/dev/null)
 
 if [[ "${cluster_exists}" == "true" ]]; then
   echo "Cluster ${cluster_name} already exists."
-  echo "Run 'make validate' to check it or 'make cluster-destroy' first."
+
+  if ! kubectl config get-contexts "${cluster_context}" --no-headers >/dev/null 2>&1; then
+    echo "Restoring context ${cluster_context} in ${kubeconfig_path}."
+    kind export kubeconfig \
+      --name "${cluster_name}" \
+      --kubeconfig "${kubeconfig_path}"
+  fi
+
+  echo "Run 'kubectl config use-context ${cluster_context}' for interactive use."
+  echo "Run 'make validate' to check the cluster or 'make cluster-destroy' first."
   exit 0
 fi
 
@@ -31,7 +40,7 @@ kind create cluster \
   --kubeconfig "${kubeconfig_path}"
 
 kubectl \
-  --kubeconfig "${kubeconfig_path}" \
+  --context "${cluster_context}" \
   wait \
   --for=condition=Ready \
   node \
@@ -39,4 +48,5 @@ kubectl \
   --timeout=120s
 
 echo "Cluster ${cluster_name} is ready."
-echo "Kubeconfig: ${kubeconfig_path}"
+echo "Context: ${cluster_context} in ${kubeconfig_path}"
+echo "Run 'kubectl config use-context ${cluster_context}' for interactive use."

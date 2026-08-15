@@ -65,8 +65,10 @@ Direct image loading is the intentionally small local-development workflow.
 Registry automation can be added later without coupling this repository to the
 AWS delivery pipeline.
 
-## Context isolation
+## Kubernetes context
 
-All platform commands use `.state/kubeconfig` and the
-`kind-otel-demo-local` context. The default kubeconfig is never used by
-Terraform or the repository lifecycle scripts.
+The cluster registers `kind-otel-demo-local` in the standard
+`~/.kube/config`. Terraform and repository automation select that context
+explicitly, while interactive users can activate it once with
+`kubectl config use-context kind-otel-demo-local` and then use normal
+`kubectl` and `helm` commands.

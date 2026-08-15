@@ -4,7 +4,8 @@ set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cluster_name="otel-demo-local"
-kubeconfig_path="${repository_root}/.state/kubeconfig"
+cluster_context="kind-${cluster_name}"
+kubeconfig_path="${HOME}/.kube/config"
 platform_directory="${repository_root}/terraform/platform"
 
 if [[ -f "${platform_directory}/terraform.tfstate" ]]; then
@@ -21,7 +22,8 @@ if [[ -f "${platform_directory}/terraform.tfstate" ]]; then
   fi
 fi
 
-kind delete cluster --name "${cluster_name}"
-rm -f "${kubeconfig_path}"
+kind delete cluster \
+  --name "${cluster_name}" \
+  --kubeconfig "${kubeconfig_path}"
 
-echo "Cluster ${cluster_name} and its generated kubeconfig were removed."
+echo "Cluster ${cluster_name} and context ${cluster_context} were removed."

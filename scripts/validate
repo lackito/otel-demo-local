@@ -2,10 +2,8 @@
 
 set -euo pipefail
 
-repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cluster_name="otel-demo-local"
 expected_context="kind-otel-demo-local"
-kubeconfig_path="${repository_root}/.state/kubeconfig"
 
 cluster_exists="false"
 
@@ -21,26 +19,15 @@ if [[ "${cluster_exists}" != "true" ]]; then
   exit 1
 fi
 
-if [[ ! -f "${kubeconfig_path}" ]]; then
-  echo "Expected kubeconfig does not exist: ${kubeconfig_path}" >&2
-  exit 1
-fi
-
-actual_context="$(
-  kubectl \
-    --kubeconfig "${kubeconfig_path}" \
-    config \
-    current-context
-)"
-
-if [[ "${actual_context}" != "${expected_context}" ]]; then
-  echo "Expected context ${expected_context}, found ${actual_context}." >&2
+if ! kubectl config get-contexts "${expected_context}" --no-headers >/dev/null 2>&1; then
+  echo "Expected context ${expected_context} does not exist in the standard kubeconfig." >&2
+  echo "Run 'make cluster-create' to create or restore it." >&2
   exit 1
 fi
 
 not_ready_nodes="$(
   kubectl \
-    --kubeconfig "${kubeconfig_path}" \
+    --context "${expected_context}" \
     get nodes \
     --no-headers |
     awk '$2 != "Ready" {print $1}'
@@ -53,5 +40,5 @@ fi
 
 echo "Cluster validation passed."
 echo "Cluster: ${cluster_name}"
-echo "Context: ${actual_context}"
-kubectl --kubeconfig "${kubeconfig_path}" get nodes
+echo "Context: ${expected_context}"
+kubectl --context "${expected_context}" get nodes

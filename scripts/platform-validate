@@ -2,16 +2,16 @@
 
 set -euo pipefail
 
-repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-kubeconfig_path="${repository_root}/.state/kubeconfig"
+cluster_context="kind-otel-demo-local"
 
-if [[ ! -f "${kubeconfig_path}" ]]; then
-  echo "Expected kubeconfig does not exist: ${kubeconfig_path}" >&2
+if ! kubectl config get-contexts "${cluster_context}" --no-headers >/dev/null 2>&1; then
+  echo "Expected context ${cluster_context} does not exist in the standard kubeconfig." >&2
+  echo "Run 'make cluster-create' to create or restore it." >&2
   exit 1
 fi
 
 kubectl \
-  --kubeconfig "${kubeconfig_path}" \
+  --context "${cluster_context}" \
   wait \
   --namespace nginx-gateway \
   --for=condition=Available \
@@ -20,7 +20,7 @@ kubectl \
   --timeout=300s
 
 kubectl \
-  --kubeconfig "${kubeconfig_path}" \
+  --context "${cluster_context}" \
   wait \
   --namespace argocd \
   --for=condition=Available \
@@ -29,7 +29,7 @@ kubectl \
   --timeout=300s
 
 kubectl \
-  --kubeconfig "${kubeconfig_path}" \
+  --context "${cluster_context}" \
   rollout \
   status \
   statefulset \
@@ -42,7 +42,7 @@ for required_crd in \
   httproutes.gateway.networking.k8s.io \
   applications.argoproj.io; do
   if ! kubectl \
-    --kubeconfig "${kubeconfig_path}" \
+    --context "${cluster_context}" \
     get customresourcedefinition "${required_crd}" >/dev/null 2>&1; then
     echo "Missing required CRD: ${required_crd}" >&2
     exit 1
@@ -50,14 +50,14 @@ for required_crd in \
 done
 
 if ! kubectl \
-  --kubeconfig "${kubeconfig_path}" \
+  --context "${cluster_context}" \
   get gatewayclass nginx >/dev/null 2>&1; then
   echo "NGINX GatewayClass is not available." >&2
   exit 1
 fi
 
 if kubectl \
-  --kubeconfig "${kubeconfig_path}" \
+  --context "${cluster_context}" \
   get namespace opentelemetry-demo >/dev/null 2>&1; then
   echo "Application namespace exists before the GitOps milestone." >&2
   exit 1
@@ -66,11 +66,10 @@ fi
 echo "Milestone 3 platform validation passed."
 echo
 echo "NGINX Gateway Fabric:"
-kubectl --kubeconfig "${kubeconfig_path}" get pods --namespace nginx-gateway
+kubectl --context "${cluster_context}" get pods --namespace nginx-gateway
 echo
 echo "Argo CD:"
-kubectl --kubeconfig "${kubeconfig_path}" get pods --namespace argocd
+kubectl --context "${cluster_context}" get pods --namespace argocd
 echo
 echo "GatewayClass:"
-kubectl --kubeconfig "${kubeconfig_path}" get gatewayclass nginx
-
+kubectl --context "${cluster_context}" get gatewayclass nginx

@@ -2,8 +2,7 @@
 
 set -euo pipefail
 
-repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-kubeconfig_path="${repository_root}/.state/kubeconfig"
+cluster_context="kind-otel-demo-local"
 application_name="otel-demo-local"
 application_namespace="argocd"
 workload_namespace="opentelemetry-demo"
@@ -11,15 +10,16 @@ timeout_seconds=900
 poll_interval_seconds=10
 elapsed_seconds=0
 
-if [[ ! -f "${kubeconfig_path}" ]]; then
-  echo "Expected kubeconfig does not exist: ${kubeconfig_path}" >&2
+if ! kubectl config get-contexts "${cluster_context}" --no-headers >/dev/null 2>&1; then
+  echo "Expected context ${cluster_context} does not exist in the standard kubeconfig." >&2
+  echo "Run 'make cluster-create' to create or restore it." >&2
   exit 1
 fi
 
 while ((elapsed_seconds < timeout_seconds)); do
   sync_status="$(
     kubectl \
-      --kubeconfig "${kubeconfig_path}" \
+      --context "${cluster_context}" \
       get application "${application_name}" \
       --namespace "${application_namespace}" \
       --output jsonpath='{.status.sync.status}' 2>/dev/null || true
@@ -27,7 +27,7 @@ while ((elapsed_seconds < timeout_seconds)); do
 
   health_status="$(
     kubectl \
-      --kubeconfig "${kubeconfig_path}" \
+      --context "${cluster_context}" \
       get application "${application_name}" \
       --namespace "${application_namespace}" \
       --output jsonpath='{.status.health.status}' 2>/dev/null || true
@@ -46,14 +46,14 @@ done
 if [[ "${sync_status:-}" != "Synced" || "${health_status:-}" != "Healthy" ]]; then
   echo "Argo CD Application did not become Synced and Healthy within ${timeout_seconds} seconds." >&2
   kubectl \
-    --kubeconfig "${kubeconfig_path}" \
+    --context "${cluster_context}" \
     describe application "${application_name}" \
     --namespace "${application_namespace}" >&2
   exit 1
 fi
 
 kubectl \
-  --kubeconfig "${kubeconfig_path}" \
+  --context "${cluster_context}" \
   wait \
   gateway/otel-demo \
   --namespace "${workload_namespace}" \
@@ -61,7 +61,7 @@ kubectl \
   --timeout=300s
 
 kubectl \
-  --kubeconfig "${kubeconfig_path}" \
+  --context "${cluster_context}" \
   wait \
   gateway/otel-demo \
   --namespace "${workload_namespace}" \
@@ -70,7 +70,7 @@ kubectl \
 
 deployments="$(
   kubectl \
-    --kubeconfig "${kubeconfig_path}" \
+    --context "${cluster_context}" \
     get deployments \
     --namespace "${workload_namespace}" \
     --output name
@@ -83,7 +83,7 @@ fi
 
 while IFS= read -r deployment; do
   kubectl \
-    --kubeconfig "${kubeconfig_path}" \
+    --context "${cluster_context}" \
     rollout \
     status \
     "${deployment}" \
@@ -97,7 +97,7 @@ elapsed_seconds=0
 while ((elapsed_seconds < 300)); do
   sync_status="$(
     kubectl \
-      --kubeconfig "${kubeconfig_path}" \
+      --context "${cluster_context}" \
       get application "${application_name}" \
       --namespace "${application_namespace}" \
       --output jsonpath='{.status.sync.status}'
@@ -105,7 +105,7 @@ while ((elapsed_seconds < 300)); do
 
   health_status="$(
     kubectl \
-      --kubeconfig "${kubeconfig_path}" \
+      --context "${cluster_context}" \
       get application "${application_name}" \
       --namespace "${application_namespace}" \
       --output jsonpath='{.status.health.status}'
@@ -134,7 +134,7 @@ fi
 
 recommendation_images="$(
   kubectl \
-    --kubeconfig "${kubeconfig_path}" \
+    --context "${cluster_context}" \
     get pods \
     --namespace "${workload_namespace}" \
     --selector app.kubernetes.io/component=recommendation \
@@ -154,17 +154,17 @@ fi
 echo "Milestone 5 application validation passed."
 echo
 kubectl \
-  --kubeconfig "${kubeconfig_path}" \
+  --context "${cluster_context}" \
   get application "${application_name}" \
   --namespace "${application_namespace}"
 echo
 kubectl \
-  --kubeconfig "${kubeconfig_path}" \
+  --context "${cluster_context}" \
   get gateway \
   --namespace "${workload_namespace}"
 echo
 kubectl \
-  --kubeconfig "${kubeconfig_path}" \
+  --context "${cluster_context}" \
   get pods \
   --namespace "${workload_namespace}"
 echo

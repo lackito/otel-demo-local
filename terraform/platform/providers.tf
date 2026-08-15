@@ -1,6 +1,6 @@
 locals {
   cluster_context = "kind-otel-demo-local"
-  kubeconfig_path = abspath("${path.root}/../../.state/kubeconfig")
+  kubeconfig_path = pathexpand("~/.kube/config")
 }
 
 provider "helm" {
@@ -8,9 +8,4 @@ provider "helm" {
     config_path    = local.kubeconfig_path
     config_context = local.cluster_context
   }
-}
-
-provider "kubernetes" {
-  config_path    = local.kubeconfig_path
-  config_context = local.cluster_context
 }
