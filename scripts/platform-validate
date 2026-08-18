@@ -56,14 +56,7 @@ if ! kubectl \
   exit 1
 fi
 
-if kubectl \
-  --context "${cluster_context}" \
-  get namespace opentelemetry-demo >/dev/null 2>&1; then
-  echo "Application namespace exists before the GitOps milestone." >&2
-  exit 1
-fi
-
-echo "Milestone 3 platform validation passed."
+echo "Platform validation passed."
 echo
 echo "NGINX Gateway Fabric:"
 kubectl --context "${cluster_context}" get pods --namespace nginx-gateway
