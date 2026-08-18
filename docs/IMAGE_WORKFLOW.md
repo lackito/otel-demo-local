@@ -86,8 +86,8 @@ The durable loop begins when Recommendation code is pushed to the
 1. uses the pushed commit SHA automatically;
 2. builds and publishes
    `ghcr.io/lackito/otel-demo-local-recommendation:<full-sha>`;
-3. updates only `gitops/otel-demo/values.yaml`;
-4. commits the desired-state change to `otel-demo-local`;
+3. updates only `applications/otel-demo/values.yaml`;
+4. commits the desired-state change to `otel-demo-gitops-local`;
 5. leaves deployment to local Argo CD.
 
 AWS credentials, ECR, and `otel-demo-gitops` are outside this workflow.

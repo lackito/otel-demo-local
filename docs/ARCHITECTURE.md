@@ -19,15 +19,15 @@ Terraform
 Argo CD Application registration
         |
         v
-gitops/otel-demo in this repository
+otel-demo-gitops-local/applications/otel-demo
         |
         v
 OpenTelemetry Demo workloads
 ```
 
-`otel-demo-local` owns the cluster, platform, local Argo CD registration, and
-local application desired state. `otel-demo-apps` remains only the source used
-when rebuilding a demo service.
+`otel-demo-local` owns the cluster, platform, and local Argo CD registration.
+`otel-demo-gitops-local` owns local application desired state, while
+`otel-demo-apps` owns the service source.
 
 ## Networking
 
@@ -41,7 +41,7 @@ NGINX Gateway Fabric has separate control and data planes.
   mappings.
 
 Gateway and HTTPRoute resources live with the other local application desired
-state under `gitops/otel-demo`.
+state under `applications/otel-demo` in `otel-demo-gitops-local`.
 
 ## Local application image flow
 
@@ -55,7 +55,7 @@ Native Docker build tagged with the apps Git revision
 kind image load
         |
         v
-Local image override in gitops/otel-demo/values.yaml
+Local image override in otel-demo-gitops-local
         |
         v
 Argo CD Recommendation rollout

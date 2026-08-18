@@ -9,21 +9,3 @@ variable "argocd_chart_version" {
   type        = string
   default     = "9.5.17"
 }
-
-variable "opentelemetry_demo_chart_version" {
-  description = "Pinned OpenTelemetry Demo Helm chart version."
-  type        = string
-  default     = "0.38.4"
-}
-
-variable "gitops_repository_url" {
-  description = "Local platform repository watched by its Argo CD Application."
-  type        = string
-  default     = "https://github.com/lackito/otel-demo-local.git"
-}
-
-variable "gitops_revision" {
-  description = "Git revision watched by the local Argo CD Application."
-  type        = string
-  default     = "main"
-}

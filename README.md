@@ -6,7 +6,8 @@ This repository creates a disposable local Kubernetes cluster while preserving
 the ownership model used by the AWS implementation:
 
 - local cluster and platform bootstrapping belong here;
-- local Kubernetes desired state and Argo CD registration belong here;
+- local Argo CD registration belongs here;
+- local Kubernetes desired state belongs in `otel-demo-gitops-local`;
 - application source belongs in `otel-demo-apps`;
 - Argo CD, rather than lifecycle scripts or Terraform, owns application
   workloads.
@@ -28,20 +29,21 @@ environment. The `flagd` evaluation service remains enabled.
 
 ## How local GitOps works
 
-Local Argo CD watches this repository:
+Local Argo CD watches the dedicated GitOps repository:
 
 ```text
-https://github.com/lackito/otel-demo-local.git
+https://github.com/lackito/otel-demo-gitops-local.git
 ```
 
-The repository has separate areas of responsibility:
+The repositories have the same responsibility boundary as the AWS version:
 
 ```text
-otel-demo-local
-├── kind/ and terraform/
-│   └── Create the cluster, install platform components, and register Argo CD
-│
-└── gitops/otel-demo/
+otel-demo-local/
+└── kind/ and terraform/
+    └── Create the cluster, install platform components, and register Argo CD
+
+otel-demo-gitops-local/
+└── applications/otel-demo/
     ├── values.yaml
     └── manifests/
         ├── gateway.yaml
@@ -52,14 +54,14 @@ otel-demo-local
 The control flow is:
 
 ```text
-Commit and push a change to otel-demo-local/main
+Commit and push a change to otel-demo-gitops-local/main
                        |
                        v
-Local Argo CD reads otel-demo-local from GitHub
+Local Argo CD reads otel-demo-gitops-local from GitHub
                        |
                        v
 Argo combines the upstream OpenTelemetry Demo Helm chart
-with gitops/otel-demo/values.yaml and manifests/
+with applications/otel-demo/values.yaml and manifests/
                        |
                        v
 Argo reconciles the local kind cluster
@@ -74,8 +76,8 @@ workstation. Desired-state changes must be committed and pushed before Argo
 can see them. The GitHub repository must either be public or configured in
 Argo CD with private-repository credentials.
 
-`otel-demo-gitops` is not part of this local flow. It is reserved for the AWS
-EKS environment.
+`otel-demo-gitops` remains reserved for AWS; `otel-demo-gitops-local` contains
+only local desired state.
 
 ## Local CI workflow
 
@@ -91,10 +93,10 @@ otel-demo-apps local release workflow
                        +-- uses the pushed commit SHA
                        +-- builds linux/arm64
                        +-- publishes an immutable GHCR image
-                       +-- updates this repository's values.yaml
+                       +-- updates otel-demo-gitops-local values.yaml
                        |
                        v
-Local Argo CD detects the generated commit on otel-demo-local/main
+Local Argo CD detects the generated commit on otel-demo-gitops-local/main
                        |
                        v
 kind pulls and deploys the GHCR image
@@ -112,12 +114,12 @@ changes the AWS environment.
 - Helm
 - Terraform
 - Make
-- anonymous read access to `lackito/otel-demo-local` from Argo CD, or
+- anonymous read access to `lackito/otel-demo-gitops-local` from Argo CD, or
   separately configured private-repository credentials
 - a public `ghcr.io/lackito/otel-demo-local-recommendation` package for
   anonymous image pulls from kind
-- a fine-grained `LOCAL_REPOSITORY_TOKEN` secret in `otel-demo-apps`, with
-  **Contents: Read and write** access only to `otel-demo-local`
+- a fine-grained `LOCAL_GITOPS_REPOSITORY_TOKEN` secret in `otel-demo-apps`,
+  with **Contents: Read and write** access only to `otel-demo-gitops-local`
 - a classic `GHCR_PAT` secret in `otel-demo-apps`, owned by `lackito` and
   scoped to `write:packages`
 
@@ -206,7 +208,7 @@ NGINX Gateway Fabric:
 | 80 | 31437 | HTTP 80 |
 | 443 | 30478 | HTTPS 443 |
 
-This repository's `gitops/otel-demo` directory provides the Gateway resource,
+The `otel-demo-gitops-local` repository provides the Gateway resource,
 which causes NGINX Gateway Fabric to create the local data plane. Its
 `HTTPRoute` exposes the demo at `http://otel-demo.localhost`.
 
@@ -272,8 +274,9 @@ To deploy a new Recommendation build:
 1. commit the Recommendation source change in `otel-demo-apps` so it has a new
    Git SHA; the commit can remain on a local development branch;
 2. run `make recommendation-build-load`;
-3. copy the printed tag into `gitops/otel-demo/values.yaml`;
-4. commit and push the `otel-demo-local` values change;
+3. copy the printed tag into
+   `otel-demo-gitops-local/applications/otel-demo/values.yaml`;
+4. commit and push the `otel-demo-gitops-local` values change;
 5. let Argo CD detect the commit and roll out the new image;
 6. run:
 
@@ -295,7 +298,7 @@ To publish and deploy through local CI:
 5. run `make recommendation-validate`.
 
 The workflow uses `GHCR_PAT` to publish to GHCR and
-`LOCAL_REPOSITORY_TOKEN` to update only `otel-demo-local`.
+`LOCAL_GITOPS_REPOSITORY_TOKEN` to update only `otel-demo-gitops-local`.
 
 The GHCR package must be public. New packages may initially be private, so the
 workflow deliberately stops before changing Git desired state if anonymous
@@ -307,12 +310,12 @@ Later pushes to the `local` branch are fully automatic.
 ### Observe an end-to-end GitOps update
 
 After the application workflow succeeds, verify that its generated desired
-state reached this repository:
+state reached the `otel-demo-gitops-local` repository:
 
 ```bash
 git fetch origin main
-git log --oneline -3 origin/main -- gitops/otel-demo/values.yaml
-git show origin/main:gitops/otel-demo/values.yaml |
+git log --oneline -3 origin/main -- applications/otel-demo/values.yaml
+git show origin/main:applications/otel-demo/values.yaml |
   sed -n '/^  recommendation:/,/^  [a-z]/p'
 ```
 
@@ -343,7 +346,7 @@ kubectl \
 Open `https://localhost:8080`, accept the local certificate warning, and log
 in as `admin`. Select `otel-demo-local` and observe:
 
-1. **Refresh** discovers the generated `otel-demo-local/main` commit;
+1. **Refresh** discovers the generated `otel-demo-gitops-local/main` commit;
 2. sync briefly changes through `OutOfSync` or `Progressing`;
 3. automated synchronization updates the Recommendation Deployment;
 4. the application returns to `Synced` and `Healthy`;

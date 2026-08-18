@@ -1,12 +1,14 @@
 locals {
+  application_name      = "otel-demo-local"
   application_namespace = "argocd"
+  destination_namespace = "opentelemetry-demo"
 
   application_manifest = {
     apiVersion = "argoproj.io/v1alpha1"
     kind       = "Application"
 
     metadata = {
-      name      = var.application_name
+      name      = local.application_name
       namespace = local.application_namespace
     }
 
@@ -15,31 +17,31 @@ locals {
 
       sources = [
         {
-          repoURL        = "https://open-telemetry.github.io/opentelemetry-helm-charts"
-          chart          = "opentelemetry-demo"
-          targetRevision = var.chart_version
+          repoURL        = var.helm_repo
+          chart          = var.helm_chart
+          targetRevision = var.helm_chart_version
 
           helm = {
             valueFiles = [
-              "$values/${var.values_file}",
+              "$values/${var.gitops_path}/values.yaml",
             ]
           }
         },
         {
-          repoURL        = var.gitops_repository_url
-          targetRevision = var.gitops_revision
+          repoURL        = var.gitops_repo
+          targetRevision = var.gitops_branch
           ref            = "values"
         },
         {
-          repoURL        = var.gitops_repository_url
-          targetRevision = var.gitops_revision
-          path           = var.manifests_path
+          repoURL        = var.gitops_repo
+          targetRevision = var.gitops_branch
+          path           = "${var.gitops_path}/manifests"
         },
       ]
 
       destination = {
         server    = "https://kubernetes.default.svc"
-        namespace = var.destination_namespace
+        namespace = local.destination_namespace
       }
 
       syncPolicy = {
@@ -59,7 +61,7 @@ locals {
 
 resource "terraform_data" "this" {
   input = {
-    application_name      = var.application_name
+    application_name      = local.application_name
     application_namespace = local.application_namespace
     cluster_context       = var.cluster_context
     manifest              = yamlencode(local.application_manifest)
