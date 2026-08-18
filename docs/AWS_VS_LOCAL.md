@@ -11,6 +11,8 @@
 | Application route | AWS-specific Ingress | `Gateway` and `HTTPRoute` |
 | Workload identity | IRSA and AWS OIDC | Not required |
 | Terraform backend | Amazon S3 | Local state |
+| Terraform stages | Infrastructure, platform, applications | Platform, applications |
+| Application resource | `kubernetes_manifest` | `kubernetes_manifest` |
 | GitOps engine | Argo CD | Argo CD |
 | Desired-state location | `otel-demo-gitops` | `otel-demo-gitops-local` |
 | Workload owner | Argo CD | Argo CD |
@@ -25,6 +27,8 @@ The implementations do not share desired-state files. AWS watches
 `otel-demo-gitops`; the local Argo CD instance watches
 `otel-demo-gitops-local`. Each environment's infrastructure source repository
 registers its own Argo CD Application through the same module interface.
+In both environments, registration is isolated from platform installation so
+the Argo CD CRD exists before Terraform plans the Application resource.
 
 The local `HTTPRoute` is the equivalent of the AWS application Ingress at the
 responsibility level: both are GitOps-owned desired state that connect an

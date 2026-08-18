@@ -18,17 +18,3 @@ module "argocd" {
 
   chart_version = var.argocd_chart_version
 }
-
-module "argocd_application" {
-  source = "./modules/argocd-application"
-
-  cluster_context = local.cluster_context
-  gitops_repo     = "https://github.com/lackito/otel-demo-gitops-local.git"
-  gitops_branch   = "main"
-  gitops_path     = "applications/otel-demo"
-
-  depends_on = [
-    module.argocd,
-    module.nginx_gateway_fabric,
-  ]
-}

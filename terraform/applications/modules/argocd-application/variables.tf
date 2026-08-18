@@ -16,11 +16,6 @@ variable "helm_chart_version" {
   default     = "0.38.4"
 }
 
-variable "cluster_context" {
-  description = "Kubernetes context targeted by Argo CD Application lifecycle commands."
-  type        = string
-}
-
 variable "gitops_repo" {
   description = "Repository containing local Helm values and manifests."
   type        = string

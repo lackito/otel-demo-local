@@ -16,7 +16,10 @@ Terraform
         +-- Argo CD
         |
         v
-Argo CD Application registration
+Separate Terraform applications stage
+        |
+        v
+Argo CD Application registration via kubernetes_manifest
         |
         v
 otel-demo-gitops-local/applications/otel-demo
@@ -25,7 +28,8 @@ otel-demo-gitops-local/applications/otel-demo
 OpenTelemetry Demo workloads
 ```
 
-`otel-demo-local` owns the cluster, platform, and local Argo CD registration.
+`otel-demo-local` owns the cluster, platform, and local Argo CD registration in
+separate Terraform states.
 `otel-demo-gitops-local` owns local application desired state, while
 `otel-demo-apps` owns the service source.
 

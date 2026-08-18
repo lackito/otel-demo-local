@@ -17,8 +17,3 @@ output "nginx_gateway_namespace" {
   description = "Namespace containing the NGINX Gateway Fabric control plane."
   value       = module.nginx_gateway_fabric.namespace
 }
-
-output "argocd_application_name" {
-  description = "Local Argo CD Application registered by Terraform."
-  value       = module.argocd_application.name
-}

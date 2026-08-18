@@ -27,6 +27,9 @@ The optional `flagd-ui` editor sidecar is disabled only in the local overlay
 because the chart's 2.1.3 image grows until it is OOM-killed on this arm64
 environment. The `flagd` evaluation service remains enabled.
 
+For a side-by-side view of the complete AWS and local delivery paths, see
+[`docs/PROJECT_WALKTHROUGH.md`](docs/PROJECT_WALKTHROUGH.md).
+
 ## How local GitOps works
 
 Local Argo CD watches the dedicated GitOps repository:
@@ -39,8 +42,12 @@ The repositories have the same responsibility boundary as the AWS version:
 
 ```text
 otel-demo-local/
-└── kind/ and terraform/
-    └── Create the cluster, install platform components, and register Argo CD
+├── kind/
+└── terraform/
+    ├── platform/
+    │   └── Install CRDs, NGINX Gateway Fabric, and Argo CD
+    └── applications/
+        └── Register the local Argo CD Application
 
 otel-demo-gitops-local/
 └── applications/otel-demo/
@@ -67,7 +74,8 @@ with applications/otel-demo/values.yaml and manifests/
 Argo reconciles the local kind cluster
 ```
 
-Terraform installs Argo CD and registers the Application, but it does not
+The platform Terraform stage installs Argo CD. The separate applications stage
+registers the Application with `kubernetes_manifest`, but Terraform does not
 manage the OpenTelemetry Demo workloads. After registration, Argo CD owns
 those workloads.
 
@@ -119,7 +127,9 @@ changes the AWS environment.
 - a public `ghcr.io/lackito/otel-demo-local-recommendation` package for
   anonymous image pulls from kind
 - a fine-grained `LOCAL_GITOPS_REPOSITORY_TOKEN` secret in `otel-demo-apps`,
-  with **Contents: Read and write** access only to `otel-demo-gitops-local`
+  with **Contents: Read and write** access to `otel-demo-gitops-local`; if the
+  token was created before the repository, add the new repository to the
+  token's selected repository access
 - a classic `GHCR_PAT` secret in `otel-demo-apps`, owned by `lackito` and
   scoped to `write:packages`
 
@@ -139,6 +149,10 @@ make cluster-create
 make platform-init
 make platform-plan
 make platform-apply
+make platform-validate
+make applications-init
+make applications-plan
+make applications-apply
 make application-validate
 make recommendation-validate
 ```
@@ -148,7 +162,7 @@ workstation-local image survives or is required.
 
 Direct kind loading remains available as the faster development loop. When
 using that mode on a new cluster, run `make recommendation-build-load` after
-`make cluster-create` and before `make platform-apply`.
+`make cluster-create` and before `make applications-apply`.
 
 ## Cluster lifecycle
 
@@ -228,15 +242,38 @@ make platform-apply
 make platform-validate
 ```
 
-Remove the platform before deleting the cluster:
+Register the Argo CD Application after the platform is healthy:
 
 ```bash
+make applications-init
+make applications-plan
+make applications-apply
+```
+
+For an existing checkout created before the stage split, adopt the running
+Application into the new state before planning:
+
+```bash
+make applications-adopt
+make platform-plan
+make applications-plan
+make applications-apply
+```
+
+The adoption command imports the existing Kubernetes object and forgets the
+obsolete command resource without deleting the Application or its workloads.
+
+Remove the application registration and then the platform before deleting the
+cluster:
+
+```bash
+make applications-destroy
 make platform-destroy
 make cluster-destroy
 ```
 
-Terraform owns platform services. Argo CD owns the registered application and
-its workloads.
+Terraform's platform stage owns platform services. Its applications stage owns
+only the Argo CD Application registration. Argo CD owns the workloads.
 
 ## Application validation
 

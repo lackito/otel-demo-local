@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+platform_directory="${repository_root}/terraform/platform"
+applications_directory="${repository_root}/terraform/applications"
+cluster_context="kind-otel-demo-local"
+application_address="module.argocd_application.kubernetes_manifest.otel_demo"
+legacy_address="module.argocd_application.terraform_data.this"
+import_id="apiVersion=argoproj.io/v1alpha1,kind=Application,namespace=argocd,name=otel-demo-local"
+
+terraform -chdir="${applications_directory}" init
+
+if ! terraform -chdir="${applications_directory}" state list 2>/dev/null |
+  grep -Fxq "${application_address}"; then
+  if kubectl \
+    --context "${cluster_context}" \
+    get application otel-demo-local \
+    --namespace argocd >/dev/null 2>&1; then
+    terraform \
+      -chdir="${applications_directory}" \
+      import \
+      "${application_address}" \
+      "${import_id}"
+  fi
+fi
+
+if terraform -chdir="${platform_directory}" state list 2>/dev/null |
+  grep -Fxq "${legacy_address}"; then
+  terraform -chdir="${platform_directory}" state rm "${legacy_address}"
+fi
+
+echo "Application state adoption is complete."
+echo "Review both stages with 'make platform-plan' and 'make applications-plan'."

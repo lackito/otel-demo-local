@@ -7,6 +7,21 @@ cluster_name="otel-demo-local"
 cluster_context="kind-${cluster_name}"
 kubeconfig_path="${HOME}/.kube/config"
 platform_directory="${repository_root}/terraform/platform"
+applications_directory="${repository_root}/terraform/applications"
+
+if [[ -f "${applications_directory}/terraform.tfstate" ]]; then
+  application_resources="$(
+    terraform \
+      -chdir="${applications_directory}" \
+      state list 2>/dev/null || true
+  )"
+
+  if [[ -n "${application_resources}" ]]; then
+    echo "Terraform still manages application registration in this cluster." >&2
+    echo "Run 'make applications-destroy' before deleting the cluster." >&2
+    exit 1
+  fi
+fi
 
 if [[ -f "${platform_directory}/terraform.tfstate" ]]; then
   platform_resources="$(
@@ -17,7 +32,7 @@ if [[ -f "${platform_directory}/terraform.tfstate" ]]; then
 
   if [[ -n "${platform_resources}" ]]; then
     echo "Terraform still manages platform resources in this cluster." >&2
-    echo "Run 'make platform-destroy' before deleting the cluster." >&2
+    echo "Run 'make platform-destroy' after destroying the applications stage." >&2
     exit 1
   fi
 fi

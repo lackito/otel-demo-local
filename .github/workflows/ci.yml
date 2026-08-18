@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  terraform:
+    name: Terraform (${{ matrix.stage }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        stage:
+          - platform
+          - applications
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.14.6
+
+      - name: Check formatting
+        run: terraform -chdir="terraform/${{ matrix.stage }}" fmt -check -recursive
+
+      - name: Initialize without a backend
+        run: terraform -chdir="terraform/${{ matrix.stage }}" init -backend=false
+
+      - name: Validate configuration
+        run: terraform -chdir="terraform/${{ matrix.stage }}" validate
+
+  repository:
+    name: Repository checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Parse YAML
+        shell: bash
+        run: |
+          ruby <<'RUBY'
+          require "yaml"
+          ignored = [".git", ".terraform"]
+          paths = Dir.glob("**/*.{yaml,yml}", File::FNM_DOTMATCH).reject do |path|
+            (path.split("/") & ignored).any?
+          end
+          paths.each { |path| YAML.parse_file(path) }
+          puts "Parsed #{paths.length} YAML files."
+          RUBY
+
+      - name: Check shell syntax
+        run: find scripts -maxdepth 1 -type f -print0 | xargs -0 -n1 bash -n
+
+      - name: Lint GitHub Actions workflows
+        run: docker run --rm -v "${PWD}:/repo" --workdir /repo rhysd/actionlint:1.7.12 -color
