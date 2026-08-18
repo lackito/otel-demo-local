@@ -50,6 +50,8 @@ otel-demo-local/
         └── Register the local Argo CD Application
 
 otel-demo-gitops-local/
+├── argocd/applications/
+│   └── otel-demo.yaml
 └── applications/otel-demo/
     ├── values.yaml
     └── manifests/

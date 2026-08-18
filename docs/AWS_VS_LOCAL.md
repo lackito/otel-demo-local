@@ -13,6 +13,7 @@
 | Terraform backend | Amazon S3 | Local state |
 | Terraform stages | Infrastructure, platform, applications | Platform, applications |
 | Application resource | `kubernetes_manifest` | `kubernetes_manifest` |
+| Declarative Application YAML | `argocd/applications/otel-demo.yaml` | `argocd/applications/otel-demo.yaml` |
 | GitOps engine | Argo CD | Argo CD |
 | Desired-state location | `otel-demo-gitops` | `otel-demo-gitops-local` |
 | Workload owner | Argo CD | Argo CD |

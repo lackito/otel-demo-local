@@ -33,6 +33,10 @@ separate Terraform states.
 `otel-demo-gitops-local` owns local application desired state, while
 `otel-demo-apps` owns the service source.
 
+The GitOps repository retains a declarative copy of the local Argo CD
+Application at `argocd/applications/otel-demo.yaml`. Terraform remains the
+mechanism that registers that Application with the cluster.
+
 ## Networking
 
 NGINX Gateway Fabric has separate control and data planes.

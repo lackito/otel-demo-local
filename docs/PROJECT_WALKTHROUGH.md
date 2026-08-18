@@ -55,6 +55,7 @@ Applications Terraform state
         v
 GitOps repository
         |
+        +-- declarative Argo CD Application definition
         +-- Helm values
         +-- environment-specific routing manifests
         |
@@ -62,9 +63,9 @@ GitOps repository
 Argo CD-owned workloads
 ```
 
-Terraform is the single authority for Argo CD Application registration. The
-GitOps repositories contain desired application state and do not duplicate
-the registration manifest.
+Terraform registers the Argo CD Applications. Both GitOps repositories retain
+matching declarative Application YAML alongside the desired application state
+so the AWS and local implementations can be compared directly.
 
 ## Implementation order
 
