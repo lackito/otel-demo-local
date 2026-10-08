@@ -74,7 +74,7 @@ are documented in [troubleshooting](docs/TROUBLESHOOTING.md).
 | [otel-demo-gitops-local](https://github.com/lackito/otel-demo-gitops-local) | Local Helm values and Gateway resources |
 | [otel-demo-gitops](https://github.com/lackito/otel-demo-gitops) | AWS desired state |
 | [otel-demo-apps](https://github.com/lackito/otel-demo-apps) | Application source and release workflows |
-| [otel-demo-infra-aws](https://github.com/lackito/otel-infra-aws) | AWS infrastructure and platform provisioning |
+| [otel-demo-infra-aws](https://github.com/lackito/otel-demo-infra-aws) | AWS infrastructure and platform provisioning |
 
 The application source repository is needed for the custom Recommendation build
 and release paths. See the operations guide for the exact dependencies.
