@@ -12,8 +12,8 @@ the ownership model used by the AWS implementation:
 
 - local cluster and platform bootstrapping belong here;
 - local Argo CD registration belongs here;
-- local Kubernetes desired state belongs in `otel-demo-gitops-local`;
-- application source belongs in `otel-demo-apps`;
+- local Kubernetes desired state belongs in [otel-demo-gitops-local](https://github.com/lackito/otel-demo-gitops-local);
+- application source belongs in [otel-demo-apps](https://github.com/lackito/otel-demo-apps);
 - Argo CD, rather than lifecycle scripts or Terraform, owns application
   workloads.
 
