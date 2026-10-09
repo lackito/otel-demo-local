@@ -31,4 +31,4 @@ if ! docker info >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "All Milestone 2 prerequisites are available."
+echo "All prerequisites are available."

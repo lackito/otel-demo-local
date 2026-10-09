@@ -1,213 +1,96 @@
-# Local Kubernetes Operations Guide
+# Local Kubernetes Operations
 
-Detailed setup, operating procedures, and implementation notes.
-Return to the [project overview](../README.md).
+[Overview](../README.md) · [Architecture](ARCHITECTURE.md) · [Troubleshooting](TROUBLESHOOTING.md)
 
-## OpenTelemetry Demo - Local Kubernetes Platform
+Run commands from `otel-demo-local` unless another repository is named.
+Repository scripts explicitly target `kind-otel-demo-local` in `~/.kube/config`.
 
-Local counterpart to the AWS EKS OpenTelemetry Demo platform.
+## 1. Check prerequisites
 
-This repository creates a disposable local Kubernetes cluster while preserving
-the ownership model used by the AWS implementation:
-
-- local cluster and platform bootstrapping belong here;
-- local Argo CD registration belongs here;
-- local Kubernetes desired state belongs in [otel-demo-gitops-local](https://github.com/lackito/otel-demo-gitops-local);
-- application source belongs in [otel-demo-apps](https://github.com/lackito/otel-demo-apps);
-- Argo CD, rather than lifecycle scripts or Terraform, owns application
-  workloads.
-
-## Current milestone
-
-Milestone 8 stabilizes and validates the local observability backends:
-
-- Jaeger retains 2,000 in-memory traces with a 512 MiB limit;
-- Prometheus has a 512 MiB limit;
-- the OpenTelemetry Collector has a 300 MiB limit;
-- Grafana has a 384 MiB limit and 128 MiB sidecar limits;
-- validation queries real metrics, traces, health, and datasources;
-- a 15-minute soak detects backend restarts and OOMs.
-
-The optional `flagd-ui` editor sidecar is disabled only in the local overlay
-because the chart's 2.1.3 image grows until it is OOM-killed on this arm64
-environment. The `flagd` evaluation service remains enabled.
-
-For a side-by-side view of the complete AWS and local delivery paths, see
-[`docs/PROJECT_WALKTHROUGH.md`](PROJECT_WALKTHROUGH.md).
-
-## How local GitOps works
-
-Local Argo CD watches the dedicated GitOps repository:
-
-```text
-https://github.com/lackito/otel-demo-gitops-local.git
-```
-
-The repositories have the same responsibility boundary as the AWS version:
-
-```text
-otel-demo-local/
-├── kind/
-└── terraform/
-    ├── platform/
-    │   └── Install CRDs, NGINX Gateway Fabric, and Argo CD
-    └── applications/
-        └── Register the local Argo CD Application
-
-otel-demo-gitops-local/
-├── argocd/applications/
-│   └── otel-demo.yaml
-└── applications/otel-demo/
-    ├── values.yaml
-    └── manifests/
-        ├── gateway.yaml
-        └── httproute.yaml
-            └── Desired state continuously monitored by local Argo CD
-```
-
-The control flow is:
-
-```text
-Commit and push a change to otel-demo-gitops-local/main
-                       |
-                       v
-Local Argo CD reads otel-demo-gitops-local from GitHub
-                       |
-                       v
-Argo combines the upstream OpenTelemetry Demo Helm chart
-with applications/otel-demo/values.yaml and manifests/
-                       |
-                       v
-Argo reconciles the local kind cluster
-```
-
-The platform Terraform stage installs Argo CD. The separate applications stage
-registers the Application with `kubernetes_manifest`, but Terraform does not
-manage the OpenTelemetry Demo workloads. After registration, Argo CD owns
-those workloads.
-
-Argo CD runs inside Kubernetes and cannot read uncommitted files from the
-workstation. Desired-state changes must be committed and pushed before Argo
-can see them. The GitHub repository must either be public or configured in
-Argo CD with private-repository credentials.
-
-`otel-demo-gitops` remains reserved for AWS; `otel-demo-gitops-local` contains
-only local desired state.
-
-## Local CI workflow
-
-The local release workflow lives beside the application code in
-`otel-demo-apps`. A branch determines which environment receives a release:
-
-```text
-Push Recommendation code to otel-demo-apps/local
-                       |
-                       v
-otel-demo-apps local release workflow
-                       |
-                       +-- uses the pushed commit SHA
-                       +-- builds linux/arm64
-                       +-- publishes an immutable GHCR image
-                       +-- updates otel-demo-gitops-local values.yaml
-                       |
-                       v
-Local Argo CD detects the generated commit on otel-demo-gitops-local/main
-                       |
-                       v
-kind pulls and deploys the GHCR image
-```
-
-The workflow uses the commit that triggered it; there is no SHA selection or
-copying step. It never updates `otel-demo-gitops`, pushes to Amazon ECR, or
-changes the AWS environment.
-
-## Prerequisites
-
-- Docker-compatible runtime
-- kind
-- kubectl
-- Helm
-- Terraform
-- Make
-- anonymous read access to `lackito/otel-demo-gitops-local` from Argo CD, or
-  separately configured private-repository credentials
-- a public `ghcr.io/lackito/otel-demo-local-recommendation` package for
-  anonymous image pulls from kind
-- a fine-grained `LOCAL_GITOPS_REPOSITORY_TOKEN` secret in `otel-demo-apps`,
-  with **Contents: Read and write** access to `otel-demo-gitops-local`; if the
-  token was created before the repository, add the new repository to the
-  token's selected repository access
-- a classic `GHCR_PAT` secret in `otel-demo-apps`, owned by `lackito` and
-  scoped to `write:packages`
-
-Check the workstation:
+Install Docker with a running compatible runtime, kind, kubectl, Helm,
+Terraform, Make, curl, and jq. Keep `otel-demo-apps` beside this repository:
+Recommendation build and validation scripts read it by default. Set
+`APPS_REPOSITORY` if it lives elsewhere.
 
 ```bash
 make prerequisites
+kind get clusters
+kubectl config current-context
 ```
 
-## Fresh cluster order
+Argo CD needs access to `otel-demo-gitops-local` on GitHub. For the GHCR path,
+the image referenced by its values file must already exist and be anonymously
+pullable. The current local release builds `linux/arm64`; an amd64 cluster
+needs a matching image, such as the direct-load path below.
 
-After the local CI workflow has published the GHCR image and updated the
-values file, a brand-new cluster uses this order:
+## 2. Create or resume the environment
+
+Use the output of `kind get clusters` to choose **one** path below.
+`otel-demo-local` here means the kind cluster name, not the repository folder.
+
+### A. No local cluster exists
+
+If the output says `No kind clusters found`, or does not list `otel-demo-local`,
+create the cluster and check it:
 
 ```bash
 make cluster-create
+make validate
+```
+
+Once both succeed, continue to **Install the platform and register the application**
+below. Do not run `platform-validate` before installing the platform.
+
+### B. The local cluster already exists
+
+If the output lists `otel-demo-local`, check the cluster:
+
+```bash
+make cluster-create
+make validate
+```
+
+Despite its name, `cluster-create` reuses an existing cluster and restores a
+missing kubeconfig context; it does not recreate the cluster.
+
+If you previously installed the platform, run `make platform-validate`.
+If it passes and the application was registered, continue to
+[Validate the deployment](#3-validate-the-deployment).
+If the platform has not been installed, use the installation sequence below.
+If it is installed but fails validation, use [Troubleshooting](TROUBLESHOOTING.md)
+before changing or recreating anything.
+
+### Install the platform and register the application
+
+Start here after the cluster passes `make validate`. Use an existing published
+GHCR image in local GitOps values, or prepare a direct-loaded image as described
+under [Update an image](#5-update-an-image).
+Review each Terraform plan and confirmation prompt before applying.
+
+Install the platform:
+
+```bash
 make platform-init
 make platform-plan
 make platform-apply
 make platform-validate
+```
+
+After platform validation succeeds, register the application. If the platform
+was already healthy and only registration is missing, start at this block:
+
+```bash
 make applications-init
 make applications-plan
 make applications-apply
-make application-validate
-make recommendation-validate
 ```
 
-Argo CD reads the GHCR image reference from Git and kind pulls the image. No
-workstation-local image survives or is required.
+Keep these stages separate: Argo CD and its CRDs must exist before Terraform
+can plan the Application registration. For direct loading, build/load the
+image and push the matching GitOps values before `applications-apply`.
+Then continue to [Validate the deployment](#3-validate-the-deployment).
 
-Direct kind loading remains available as the faster development loop. When
-using that mode on a new cluster, run `make recommendation-build-load` after
-`make cluster-create` and before `make applications-apply`.
-
-## Cluster lifecycle
-
-Create the cluster:
-
-```bash
-make cluster-create
-```
-
-Validate the cluster:
-
-```bash
-make validate
-```
-
-Delete the cluster:
-
-```bash
-make cluster-destroy
-```
-
-## Kubernetes context
-
-The cluster is named `otel-demo-local` and its Kubernetes context is
-`kind-otel-demo-local`.
-
-The cluster registers that context in the standard kubeconfig:
-
-```text
-~/.kube/config
-```
-
-Repository automation selects `kind-otel-demo-local` explicitly, so it does
-not depend on whichever context is currently active. Terraform uses the same
-dedicated context in `~/.kube/config`.
-
-For interactive work, select the context once and then use normal Kubernetes
-and Helm commands:
+For manual inspection, explicitly select the local context:
 
 ```bash
 kubectl config use-context kind-otel-demo-local
@@ -216,62 +99,130 @@ kubectl get pods --all-namespaces
 helm list --all-namespaces
 ```
 
-Run `make cluster-create` if the kind cluster already exists but the context
-needs to be restored in `~/.kube/config`.
-
-## Local networking
-
-The kind control-plane maps host ports 80 and 443 to fixed NodePorts used by
-NGINX Gateway Fabric:
-
-| Workstation | kind NodePort | Gateway listener |
-|---|---|---|
-| 80 | 31437 | HTTP 80 |
-| 443 | 30478 | HTTPS 443 |
-
-The `otel-demo-gitops-local` repository provides the Gateway resource,
-which causes NGINX Gateway Fabric to create the local data plane. Its
-`HTTPRoute` exposes the demo at `http://otel-demo.localhost`.
-
-## Platform lifecycle
-
-Initialize and review the Terraform plan:
+## 3. Validate the deployment
 
 ```bash
-make platform-init
-make platform-plan
+make application-validate
+make routing-validate
+make recommendation-validate
+make observability-validate
 ```
 
-Install the platform:
+| Check | What it verifies |
+|---|---|
+| `validate` | Cluster readiness |
+| `platform-validate` | Installed platform components |
+| `application-validate` | Argo CD sync/health, Gateway, deployments, and image source |
+| `routing-validate` | Route attachment, backend references, demo response, and hostname isolation |
+| `recommendation-validate` | Deployed image format/source, rollout, and Recommendation API data |
+| `observability-validate` | Backend rollouts, OOM status, actual metrics/traces, and Grafana health/datasources |
+
+For sustained-load validation:
 
 ```bash
-make platform-apply
-make platform-validate
+make observability-soak
 ```
 
-Register the Argo CD Application after the platform is healthy:
+This runs for 15 minutes and fails if an observability pod is replaced or a
+container restart count changes. Ready pods alone do not prove telemetry is
+flowing. The observability check queries active Prometheus `up` series,
+Recommendation traces in Jaeger, and Grafana's Prometheus/Jaeger datasources.
+
+The Recommendation validator accepts GHCR tags shaped as full commit SHAs;
+compare the tag with the intended release SHA yourself. Direct-load validation
+compares against the sibling application repository's current commit.
+
+## 4. Open the interfaces
+
+| Interface | URL |
+|---|---|
+| Demo | http://otel-demo.localhost |
+| Grafana | http://otel-demo.localhost/grafana/ |
+| Jaeger | http://otel-demo.localhost/jaeger/ui/ |
+
+Prometheus stays cluster-internal; use Grafana for browser-based queries.
+Telemetry storage is ephemeral, so workload recreation can discard history.
+
+For Argo CD, retrieve the initial admin password locally:
 
 ```bash
-make applications-init
-make applications-plan
-make applications-apply
+kubectl --context kind-otel-demo-local -n argocd \
+  get secret argocd-initial-admin-secret \
+  -o jsonpath='{.data.password}' | base64 --decode
+echo
 ```
 
-For an existing checkout created before the stage split, adopt the running
-Application into the new state before planning:
+Keep this running in a separate terminal:
 
 ```bash
-make applications-adopt
-make platform-plan
-make applications-plan
-make applications-apply
+kubectl --context kind-otel-demo-local -n argocd \
+  port-forward service/argocd-server 8080:443
 ```
 
-The adoption command imports the existing Kubernetes object and forgets the
-obsolete command resource without deleting the Application or its workloads.
+Open `https://localhost:8080`, accept the local certificate warning, and sign
+in as `admin` using the initial password unless you have changed it.
 
-Remove the application registration and then the platform before deleting the
-cluster:
+## 5. Update an image
+
+### GitHub Actions and GHCR
+
+In `otel-demo-apps`, configure these repository secrets for release publishing:
+
+| Secret | Required access |
+|---|---|
+| `LOCAL_GITOPS_REPOSITORY_TOKEN` | Fine-grained token with Contents read/write for `otel-demo-gitops-local` |
+| `GHCR_PAT` | Classic token owned by the publishing account with `write:packages` |
+
+If the GitOps repository was created after the token, add it to the token's
+selected repositories. These credentials are needed by CI, not for anonymous
+pulls of an already-published public image.
+
+1. Commit Recommendation changes on the `otel-demo-apps/local` branch.
+2. Push that branch and watch **Release recommendation service to local Kubernetes**.
+3. Confirm it publishes `ghcr.io/lackito/otel-demo-local-recommendation:<full-sha>`.
+4. Confirm its generated commit updates `otel-demo-gitops-local/main`.
+5. In Argo CD, refresh `otel-demo-local` and wait for `Synced` and `Healthy`.
+6. Run `make application-validate` and `make recommendation-validate` here.
+
+The workflow verifies anonymous image access before updating GitOps. If that
+step fails, make the GHCR package public and rerun the workflow.
+
+### Direct kind loading
+
+Use this for a faster development loop or a native-architecture image:
+
+1. Commit source changes in the sibling `otel-demo-apps` checkout so the image
+   receives a distinct Git-based tag; the commit can remain local.
+2. Run `make recommendation-build-load` here. It builds for the kind node's
+   architecture and loads `otel-demo/recommendation:local-<short-sha>`.
+3. In `otel-demo-gitops-local/applications/otel-demo/values.yaml`, set the
+   Recommendation image override's **repository and tag** to the printed values.
+4. Commit and push that values change; Argo CD cannot see unpushed local files.
+5. Wait for reconciliation, then run `make recommendation-validate` here.
+
+The build command does not update GitOps or trigger a rollout itself. Reload
+the image after recreating a cluster. To return to GHCR delivery, publish a
+local release and let its generated commit restore the GHCR repository/tag.
+
+### Verify the complete delivery trail
+
+Run in `otel-demo-gitops-local`:
+
+```bash
+git fetch origin main
+git log --oneline -3 origin/main -- applications/otel-demo/values.yaml
+git show origin/main:applications/otel-demo/values.yaml
+```
+
+For a CI release, look for `chore(recommendation): deploy <commit-sha>` and
+match the full tag to the triggering application commit and published image.
+In Argo CD, inspect **History and Rollback** and the Recommendation Deployment.
+Its deployed image must match that release. Save the run URL, GitOps commit,
+and deployment evidence when recording a test run.
+
+## 6. Tear down
+
+Destroy the application registration and platform before deleting the cluster:
 
 ```bash
 make applications-destroy
@@ -279,183 +230,6 @@ make platform-destroy
 make cluster-destroy
 ```
 
-Terraform's platform stage owns platform services. Its applications stage owns
-only the Argo CD Application registration. Argo CD owns the workloads.
-
-## Application validation
-
-Validate Argo CD, the Gateway, every deployment, and the local Recommendation
-image source:
-
-```bash
-make application-validate
-```
-
-Validate the Gateway, route attachment, backend references, successful demo
-response, and hostname isolation:
-
-```bash
-make routing-validate
-```
-
-### Fast development: direct kind loading
-
-Build Recommendation from the sibling `otel-demo-apps` repository and load it
-into kind:
-
-```bash
-make recommendation-build-load
-```
-
-This command does not update Git, GitHub, or Argo CD. It only:
-
-1. reads the current commit from the sibling `otel-demo-apps` repository;
-2. builds `otel-demo/recommendation:local-<short-commit>`;
-3. loads that image into the kind node.
-
-To deploy a new Recommendation build:
-
-1. commit the Recommendation source change in `otel-demo-apps` so it has a new
-   Git SHA; the commit can remain on a local development branch;
-2. run `make recommendation-build-load`;
-3. copy the printed tag into
-   `otel-demo-gitops-local/applications/otel-demo/values.yaml`;
-4. commit and push the `otel-demo-gitops-local` values change;
-5. let Argo CD detect the commit and roll out the new image;
-6. run:
-
-```bash
-make recommendation-validate
-```
-
-This manual loop remains useful while editing code because it avoids waiting
-for a remote build.
-
-### Repeatable delivery: local CI and GHCR
-
-To publish and deploy through local CI:
-
-1. commit Recommendation changes on the `otel-demo-apps/local` branch;
-2. push that branch;
-3. wait for `Release recommendation service to local Kubernetes`;
-4. let its generated values commit reach Argo CD;
-5. run `make recommendation-validate`.
-
-The workflow uses `GHCR_PAT` to publish to GHCR and
-`LOCAL_GITOPS_REPOSITORY_TOKEN` to update only `otel-demo-gitops-local`.
-
-The GHCR package must be public. New packages may initially be private, so the
-workflow deliberately stops before changing Git desired state if anonymous
-pull access fails. Make `otel-demo-local-recommendation` public in its GitHub
-package settings, then rerun the failed workflow.
-
-Later pushes to the `local` branch are fully automatic.
-
-### Observe an end-to-end GitOps update
-
-After the application workflow succeeds, verify that its generated desired
-state reached the `otel-demo-gitops-local` repository:
-
-```bash
-git fetch origin main
-git log --oneline -3 origin/main -- applications/otel-demo/values.yaml
-git show origin/main:applications/otel-demo/values.yaml |
-  sed -n '/^  recommendation:/,/^  [a-z]/p'
-```
-
-Expected evidence:
-
-- a generated commit named `chore(recommendation): deploy <commit-sha>`;
-- repository `ghcr.io/lackito/otel-demo-local-recommendation`;
-- a full 40-character tag matching the triggering `otel-demo-apps` commit.
-
-To observe reconciliation in the Argo CD GUI, first obtain the password:
-
-```bash
-kubectl \
-  get secret argocd-initial-admin-secret \
-  --namespace argocd \
-  --output jsonpath='{.data.password}' |
-  base64 --decode
-echo
-```
-
-In another terminal, keep this port-forward running:
-
-```bash
-kubectl \
-  port-forward --namespace argocd service/argocd-server 8080:443
-```
-
-Open `https://localhost:8080`, accept the local certificate warning, and log
-in as `admin`. Select `otel-demo-local` and observe:
-
-1. **Refresh** discovers the generated `otel-demo-gitops-local/main` commit;
-2. sync briefly changes through `OutOfSync` or `Progressing`;
-3. automated synchronization updates the Recommendation Deployment;
-4. the application returns to `Synced` and `Healthy`;
-5. **History and Rollback** records the deployed source revision;
-6. the resource tree shows the replacement Recommendation pod becoming
-   healthy.
-
-Finally, validate from the workstation:
-
-```bash
-make application-validate
-make recommendation-validate
-```
-
-`make recommendation-validate` prints the deployed GHCR image and reports
-`Delivery: local CI and GHCR`. The GitHub workflow run, Git commit, Argo CD
-history, Deployment image, and API response together form the complete audit
-trail.
-
-Validate the observability backends and real telemetry data:
-
-```bash
-make observability-validate
-```
-
-Run the 15-minute stability test:
-
-```bash
-make observability-soak
-```
-
-Open the demo:
-
-```text
-http://otel-demo.localhost
-```
-
-Open the observability UIs:
-
-```text
-http://otel-demo.localhost/grafana/
-http://otel-demo.localhost/jaeger/ui/
-```
-
-For direct service debugging, a temporary port-forward can still bypass the
-Gateway:
-
-```bash
-kubectl \
-  port-forward --namespace opentelemetry-demo \
-  service/frontend-proxy 18080:8080
-```
-
-See `docs/TROUBLESHOOTING.md` for the `flagd-ui` investigation and the local
-fallback decision.
-
-See `docs/IMAGE_WORKFLOW.md` for the direct-load, local-registry, and GHCR
-tradeoffs and progression.
-
-## Why Gateway API instead of ingress-nginx
-
-The original local design selected the Kubernetes community's
-`ingress-nginx`. That project was retired in March 2026 and no longer receives
-security updates.
-
-The local platform therefore uses maintained NGINX Gateway Fabric and the
-Kubernetes Gateway API. This preserves NGINX as the local data plane while
-teaching the current replacement for the legacy Ingress API.
+Deleting the cluster discards workloads and ephemeral data. The destroy script
+refuses deletion while either local Terraform state still lists resources.
+Keep Terraform state until the managed resources have been destroyed.
